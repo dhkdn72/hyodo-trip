@@ -1,0 +1,28 @@
+{
+  "name": "hyodo-trip",
+  "private": true,
+  "version": "0.1.0",
+  "description": "효도여행 설계 도우미 — 부모님 컨디션에 맞춘 하루 일정 설계",
+  "type": "module",
+  "workspaces": [
+    "core",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c cyan,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "build:demo": "npm run build:demo -w client",
+    "start": "npm run start -w server",
+    "test": "vitest run",
+    "typecheck": "tsc -p core && tsc -p server && tsc -p client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

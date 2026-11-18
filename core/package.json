@@ -1,0 +1,12 @@
+{
+  "name": "@hyodo/core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "일정 계산 엔진 (서버와 데모 클라이언트가 함께 씀). Node·브라우저 어디서나 돌아가도록 외부 의존성 없음",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts"
+}
