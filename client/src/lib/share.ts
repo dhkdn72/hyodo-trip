@@ -77,7 +77,7 @@ export async function shareToKakaoTalk(blob: Blob, filename: string, title: stri
     dt.items.add(file);
     const up = await Kakao.Share.uploadImage({ file: dt.files });
     const imageUrl: string = up?.infos?.original?.url;
-    // link 의 도메인은 카카오 앱 설정 [플랫폼 > Web 사이트 도메인]에 등록돼 있어야 합니다
+    // link 의 도메인은 카카오디벨로퍼스 [앱] > [제품 링크 관리] > [웹 도메인]에 등록돼 있어야 합니다
     const link = { mobileWebUrl: location.origin, webUrl: location.origin };
     Kakao.Share.sendDefault({
       objectType: 'feed',

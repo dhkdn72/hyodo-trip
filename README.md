@@ -70,7 +70,7 @@ cp .env.example .env   # 키를 채운 뒤 npm run dev 다시 실행
 | `TOUR_API_KEY` | 공공데이터포털 '한국관광공사_국문 관광정보 서비스_GW' 활용신청 | Decoding 키 권장 |
 | `KORWITH_API_KEY` | '한국관광공사_무장애 여행 정보' 활용신청 | 같은 계정이면 비워 두기(위 키 사용) |
 | `KAKAO_REST_API_KEY` | 카카오 디벨로퍼스 앱 → [카카오맵] 사용 설정 ON | 2026-07-21부터 카카오맵 API 이용 방식·무료 쿼터가 바뀜. 무료 쿼터는 계정에서 처음 활성화한 앱에만 |
-| `VITE_KAKAO_JS_KEY` | 같은 앱의 JavaScript 키 | 'JavaScript SDK 도메인'과 'Web 사이트 도메인'에 접속 주소 등록 (지도·카카오톡 공유) |
+| `VITE_KAKAO_JS_KEY` | 같은 앱의 JavaScript 키 | [앱] > [플랫폼 키] > [JavaScript 키] > [JavaScript SDK 도메인](지도)과 [앱] > [제품 링크 관리] > [웹 도메인](카카오톡 공유)에 접속 주소 등록 |
 | `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`+`OPENAI_MODEL` | 각 콘솔 | 없으면 템플릿 |
 
 API 호출을 줄이려고 서버 메모리에 캐시합니다 (목록 6시간, 상세·무장애 24시간, 경로 1시간).

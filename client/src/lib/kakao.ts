@@ -1,7 +1,8 @@
 // 카카오 JavaScript SDK 로더
 //  - 지도: https://dapi.kakao.com/v2/maps/sdk.js?appkey=JS키&autoload=false → kakao.maps.load()
 //  - 카카오톡 공유: Kakao JS SDK v2 (Kakao.Share.uploadImage / sendDefault)
-// JavaScript 키는 앱 관리 > 플랫폼 키에서 확인하고, 'JavaScript SDK 도메인'에 접속 주소를 등록해야 합니다.
+// JavaScript 키는 [앱] > [플랫폼 키]에서 확인하고, [JavaScript 키] > [JavaScript SDK 도메인]에 접속 주소를 등록해야 합니다.
+// 카카오톡 공유 링크용 도메인은 [앱] > [제품 링크 관리] > [웹 도메인]에 등록합니다.
 
 export const KAKAO_JS_KEY = (import.meta.env.VITE_KAKAO_JS_KEY as string | undefined) || '';
 
