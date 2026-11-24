@@ -68,7 +68,7 @@ export interface TripInput {
   origin: { name: string; pos: LatLng };
   /** 일정 끝에 출발 장소(숙소)로 돌아오기 */
   returnToOrigin: boolean;
-  /** 후보 검색 반경(m). 기본 3000 */
+  /** 후보 검색 반경(m). 기본 3000. 후보가 모자라면 서버가 넓힐 수 있음 */
   radiusM?: number;
 }
 
@@ -203,6 +203,9 @@ export interface PlanResult {
   title: string;
   date: string;
   trip: TripInput;
+  /** 실제로 후보를 찾은 반경(m). 후보가 모자라 넓혔으면 requestedRadiusM 보다 큼 */
+  radiusM: number;
+  requestedRadiusM: number;
   condition: ConditionInput;
   stops: Stop[];
   summary: PlanSummary;

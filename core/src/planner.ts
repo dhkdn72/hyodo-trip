@@ -100,30 +100,12 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
   const pinned = req.pinnedMeals ?? {};
   const pipeline: PipelineStep[] = [];
   const warnings: string[] = [];
-  const radius = trip.radiusM ?? d.radiusM;
+  const requestedRadius = Math.min(d.maxRadiusM, Math.max(300, Math.round(trip.radiusM ?? d.radiusM)));
+  let radius = requestedRadius;
   const start = toMin(trip.startTime);
   const end = toMin(trip.endTime);
   if (!(end > start + 60)) throw new PlanError('일정 종료 시각은 시작보다 1시간 이상 뒤여야 해요.', 'BAD_TIME');
   const { weekday } = parseDate(trip.date);
-
-  // ───── 1 후보 수집 ─────
-  let stopT = timer();
-  const [attrRaw, restRaw] = await Promise.all([
-    providers.searchPlaces(trip.center, radius, 'attraction'),
-    providers.searchPlaces(trip.center, radius, 'restaurant'),
-  ]);
-  const pinnedIds = Object.values(pinned);
-  // 교통시설·주점·카페처럼 맞지 않는 분류는 처음부터 뺌 (사용자가 직접 넣은 곳은 유지)
-  const allAttr = dedupe(attrRaw).filter((p) => include.has(p.id) || (!exclude.has(p.id) && !categoryCheck(p).excluded));
-  const allRest = dedupe(restRaw).filter(
-    (p) => pinnedIds.includes(p.id) || (!exclude.has(p.id) && !CAFE_NAME.test(p.name) && !categoryCheck(p).excluded),
-  );
-  pipeline.push({
-    key: 'collect',
-    label: '후보 수집',
-    ms: stopT(),
-    detail: `관광지 ${attrRaw.length}곳 · 음식점 ${restRaw.length}곳`,
-  });
 
   // 자유 입력 → 조건 (LLM, 실패하면 규칙)
   let rule: FreeTextRule | null = null;
@@ -132,73 +114,131 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     rule = (await providers.parseFreeText?.(freeText).catch(() => null)) ?? ruleFreeText(freeText);
   }
 
-  const baseScore = (p: Place) => {
+  const pinnedIds = Object.values(pinned);
+  const isForced = (p: Place) => include.has(p.id) || pinnedIds.includes(p.id);
+  const baseScore = (p: Place, r: number) => {
     const dist = haversine(trip.center, p.pos);
     p.distFromCenter = Math.round(dist);
-    return 1 - 0.3 * Math.min(1, dist / radius) + (p.image ? 0.1 : 0) + categoryCheck(p).bonus;
+    return 1 - 0.3 * Math.min(1, dist / r) + (p.image ? 0.1 : 0) + categoryCheck(p).bonus;
   };
-  const prelim = (list: Place[]) =>
-    list
-      .map((p) => ({ place: p, score: baseScore(p) + prefScore(p, prefs, rule).bonus }))
-      .sort((a, b) => b.score - a.score);
 
-  // ───── 2 접근성 필터 ─────
-  stopT = timer();
-  const isForced = (p: Place) => include.has(p.id) || Object.values(pinned).includes(p.id);
-  const attrPool = prelim(allAttr)
-    .filter((s, i) => i < 25 || isForced(s.place))
-    .map((s) => s.place);
-  const restPool = prelim(allRest)
-    .filter((s, i) => i < 15 || isForced(s.place))
-    .map((s) => s.place);
-  await providers.attachAccessibility([...attrPool, ...restPool]).catch(() => undefined);
-  if (providers.enrichDetails) {
-    await providers.enrichDetails([...attrPool.slice(0, 12), ...restPool.slice(0, 10)]).catch(() => undefined);
-  }
+  /** 1 후보 수집 + 2 접근성 필터를 반경 r 로 한 번 수행 */
+  const collect = async (r: number) => {
+    const t1 = timer();
+    const [attrRaw, restRaw] = await Promise.all([
+      providers.searchPlaces(trip.center, r, 'attraction'),
+      providers.searchPlaces(trip.center, r, 'restaurant'),
+    ]);
+    // 교통시설·주점·카페처럼 맞지 않는 분류는 처음부터 뺌 (사용자가 직접 넣은 곳은 유지)
+    const allAttr = dedupe(attrRaw).filter((p) => include.has(p.id) || (!exclude.has(p.id) && !categoryCheck(p).excluded));
+    const allRest = dedupe(restRaw).filter(
+      (p) => pinnedIds.includes(p.id) || (!exclude.has(p.id) && !CAFE_NAME.test(p.name) && !categoryCheck(p).excluded),
+    );
+    const searchMs = t1();
 
-  let accessExcluded = 0;
-  let prefExcluded = 0;
-  const closedNames: string[] = [];
-  const finalScore = (list: Place[]): Scored[] => {
-    const out: Scored[] = [];
-    for (const p of list) {
-      const forced = isForced(p);
-      const acc = checkNeeds(p, cond);
-      if (acc.excluded && !forced) {
-        accessExcluded++;
-        continue;
-      }
-      const ps = prefScore(p, prefs, rule);
-      if (ps.excluded && !forced) {
-        prefExcluded++;
-        continue;
-      }
-      if (closedOn(p.restDate, weekday)) {
-        if (!forced) {
-          closedNames.push(p.name);
+    const t2 = timer();
+    const prelim = (list: Place[]) =>
+      list
+        .map((p) => ({ place: p, score: baseScore(p, r) + prefScore(p, prefs, rule).bonus }))
+        .sort((a, b) => b.score - a.score);
+    const attrPool = prelim(allAttr)
+      .filter((x, i) => i < 25 || isForced(x.place))
+      .map((x) => x.place);
+    const restPool = prelim(allRest)
+      .filter((x, i) => i < 15 || isForced(x.place))
+      .map((x) => x.place);
+    await providers.attachAccessibility([...attrPool, ...restPool]).catch(() => undefined);
+    if (providers.enrichDetails) {
+      await providers.enrichDetails([...attrPool.slice(0, 12), ...restPool.slice(0, 10)]).catch(() => undefined);
+    }
+
+    let accessExcluded = 0;
+    let prefExcluded = 0;
+    const closedNames: string[] = [];
+    const notes: string[] = [];
+    const finalScore = (list: Place[]): Scored[] => {
+      const out: Scored[] = [];
+      for (const p of list) {
+        const forced = isForced(p);
+        const acc = checkNeeds(p, cond);
+        if (acc.excluded && !forced) {
+          accessExcluded++;
           continue;
         }
-        warnings.push(`${p.name}은(는) ${weekday}요일 휴무로 안내돼 있어요. 방문 전에 꼭 확인해 주세요.`);
+        const ps = prefScore(p, prefs, rule);
+        if (ps.excluded && !forced) {
+          prefExcluded++;
+          continue;
+        }
+        if (closedOn(p.restDate, weekday)) {
+          if (!forced) {
+            closedNames.push(p.name);
+            continue;
+          }
+          notes.push(`${p.name}은(는) ${weekday}요일 휴무로 안내돼 있어요. 방문 전에 꼭 확인해 주세요.`);
+        }
+        out.push({ place: p, score: baseScore(p, r) + ps.bonus + acc.bonus, matched: ps.matched });
       }
-      out.push({ place: p, score: baseScore(p) + ps.bonus + acc.bonus, matched: ps.matched });
-    }
-    return out.sort((a, b) => b.score - a.score);
+      return out.sort((a, b) => b.score - a.score);
+    };
+    const attrCands = finalScore(attrPool);
+    const restCands = finalScore(restPool);
+    return {
+      attrRawN: attrRaw.length,
+      restRawN: restRaw.length,
+      attrCands,
+      restCands,
+      knownCount: [...attrPool, ...restPool].filter((p) => p.access?.known).length,
+      accessExcluded,
+      prefExcluded,
+      closedNames,
+      notes,
+      searchMs,
+      accessMs: t2(),
+    };
   };
-  const attrCands = finalScore(attrPool);
-  const restCands = finalScore(restPool);
-  const knownCount = [...attrPool, ...restPool].filter((p) => p.access?.known).length;
+
+  let col = await collect(radius);
+  let searchMs = col.searchMs;
+  let accessMs = col.accessMs;
+  // 후보가 모자라면 반경을 2배씩 넓혀 다시 찾음 (손으로 고친 일정은 넓히지 않음)
+  const wantsMeal = !!(cond.lunchTime || cond.dinnerTime);
+  const tooFew = (c: typeof col) =>
+    c.attrCands.length < d.minAttractionCandidates || (wantsMeal && c.restCands.length < d.minRestaurantCandidates);
+  for (let i = 0; i < d.radiusExpandSteps && !req.lockAttractions && radius < d.maxRadiusM && tooFew(col); i++) {
+    radius = Math.min(d.maxRadiusM, radius * 2);
+    col = await collect(radius);
+    searchMs += col.searchMs;
+    accessMs += col.accessMs;
+  }
+  const { attrCands, restCands, closedNames } = col;
+  warnings.push(...col.notes);
+  const km = (m: number) => `${Math.round(m / 100) / 10}km`;
+  if (radius > requestedRadius) {
+    warnings.push(`반경 ${km(requestedRadius)} 안에는 조건에 맞는 곳이 적어 ${km(radius)}까지 넓혀 찾았어요.`);
+  }
+
+  pipeline.push({
+    key: 'collect',
+    label: '후보 수집',
+    ms: searchMs,
+    detail: `반경 ${km(radius)}${radius > requestedRadius ? ` (${km(requestedRadius)}에서 넓힘)` : ''} · 관광지 ${col.attrRawN}곳 · 음식점 ${col.restRawN}곳`,
+  });
   if (closedNames.length) {
     warnings.push(`${closedNames.slice(0, 3).join(', ')}${closedNames.length > 3 ? ' 등' : ''}은(는) ${weekday}요일 휴무라 뺐어요.`);
   }
   pipeline.push({
     key: 'access',
     label: '접근성 필터',
-    ms: stopT(),
-    detail: `무장애 정보 ${knownCount}곳 확인 · 조건에 안 맞는 ${accessExcluded}곳 제외${prefExcluded ? ` · 취향으로 ${prefExcluded}곳 제외` : ''}`,
+    ms: accessMs,
+    detail: `무장애 정보 ${col.knownCount}곳 확인 · 조건에 안 맞는 ${col.accessExcluded}곳 제외${col.prefExcluded ? ` · 취향으로 ${col.prefExcluded}곳 제외` : ''}`,
   });
 
   if (!attrCands.length && !(req.lockAttractions && (req.includeIds?.length ?? 0) === 0)) {
-    throw new PlanError('조건에 맞는 관광지를 찾지 못했어요. 지역을 넓히거나 필요한 시설 조건을 줄여 보세요.', 'NO_ATTRACTIONS');
+    throw new PlanError(
+      `반경 ${km(radius)} 안에서 조건에 맞는 관광지를 찾지 못했어요. 지역을 바꾸거나 필요한 시설 조건을 줄여 보세요.`,
+      'NO_ATTRACTIONS',
+    );
   }
 
   // ───── 3·4 이동 시간 계산 + 순서 최적화 ─────
@@ -358,7 +398,7 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
   });
 
   // ───── 5 쉬는 곳 채우기 ─────
-  stopT = timer();
+  let stopT = timer();
   const usedCafes = new Set<string>();
   let cafesFound = 0;
   const finalSeq: SeqNode[] = [];
@@ -460,6 +500,8 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     title: `부모님 ${regionShort(trip.regionName)} 나들이`,
     date: trip.date,
     trip,
+    radiusM: radius,
+    requestedRadiusM: requestedRadius,
     condition: cond,
     stops,
     summary: {

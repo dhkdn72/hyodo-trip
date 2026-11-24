@@ -89,13 +89,13 @@ export function App() {
   }, []);
 
   /** 일정 계산. f 를 넘기면 아직 반영 전인 입력값으로 요청 */
-  const make = async (nextAdj: Adjustments, fullScreen: boolean, f: FormState = form) => {
+  const make = async (nextAdj: Adjustments, fullScreen: boolean, f: FormState = form, radiusOverride?: number) => {
     setError(null);
     if (fullScreen) setLoading(true);
     else setBusy(true);
     try {
       // 전체 화면 대기는 6단계 안내를 읽을 수 있게 최소 1.4초 보여 줌
-      const [r] = await Promise.all([fetchPlan(toRequest(f, nextAdj, FLOW === 'full')), fullScreen ? wait(1400) : null]);
+      const [r] = await Promise.all([fetchPlan(toRequest(f, nextAdj, FLOW === 'full', radiusOverride)), fullScreen ? wait(1400) : null]);
       setResult(r);
       setAdj(nextAdj);
       if (fullScreen) go(4);
@@ -125,14 +125,15 @@ export function App() {
     };
   };
 
-  const onRemove = (s: Stop) => result && make(lockedFrom(result, adj, s.place.id), false);
+  // 고칠 때는 처음 결과가 실제로 쓴 반경으로 (자동으로 넓혔다면 넓힌 반경 안의 장소를 그대로 찾을 수 있게)
+  const onRemove = (s: Stop) => result && make(lockedFrom(result, adj, s.place.id), false, form, result.radiusM);
   const onReplace = (s: Stop, p: Place) => {
     if (!result) return;
     const base = lockedFrom(result, adj, s.place.id);
     base.excludeIds = base.excludeIds.filter((x) => x !== p.id);
     if (s.type === 'meal') base.pinnedMeals = { ...base.pinnedMeals, [s.mealLabel ?? 'lunch']: p.id };
     else base.includeIds = uniq([...base.includeIds, p.id]);
-    make(base, false);
+    make(base, false, form, result.radiusM);
   };
 
   // 결과 없이 ④·⑤로 돌아온 경우(새로고침 등)

@@ -69,7 +69,7 @@ export function ResultScreen({
 
   return (
     <section className="screen" style={{ position: 'relative' }}>
-      <Header step={4} title={`${formatKoreanDate(result.date).replace(/ \(.\)/, '')} 일정`} subtitle={`${result.trip.regionName} · ${result.trip.startTime}–${result.trip.endTime}`} onBack={onBack} />
+      <Header step={4} title={`${formatKoreanDate(result.date).replace(/ \(.\)/, '')} 일정`} subtitle={`${result.trip.regionName} · ${result.trip.startTime}–${result.trip.endTime} · 반경 ${result.radiusM / 1000}km${result.radiusM > result.requestedRadiusM ? '(자동 확장)' : ''}`} onBack={onBack} />
       <div className="screen-body">
         {notice && <div className="notice">{notice}</div>}
 

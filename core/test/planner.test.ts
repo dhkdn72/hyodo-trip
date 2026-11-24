@@ -246,3 +246,29 @@ describe('중복 장소', () => {
     expect(sameSpot(P('국립고궁박물관', 37.5768, 126.9752), P('경복궁', 37.5760, 126.9767))).toBe(false);
   });
 });
+
+describe('반경 (화면 ① 선택 + 자동 확장)', () => {
+  it('고른 반경이 결과에 그대로 남는다', async () => {
+    const r = await planTrip({ ...baseReq, trip: { ...baseReq.trip, radiusM: 2000 } }, createSampleProviders());
+    expect(r.requestedRadiusM).toBe(2000);
+    expect(r.radiusM).toBe(2000);
+    expect(r.stops.filter((s) => s.type === 'visit').every((s) => (s.place.distFromCenter ?? 0) <= 2000)).toBe(true);
+  });
+
+  it('후보가 모자라면 반경을 2배씩 넓히고 안내한다', async () => {
+    const r = await planTrip({ ...baseReq, trip: { ...baseReq.trip, radiusM: 300 } }, createSampleProviders());
+    expect(r.requestedRadiusM).toBe(300);
+    expect(r.radiusM).toBeGreaterThan(300);
+    expect(r.radiusM).toBeLessThanOrEqual(1200);
+    expect(r.warnings.some((w) => w.includes('넓혀 찾았어요'))).toBe(true);
+    expect(r.pipeline[0].detail).toContain('넓힘');
+  });
+
+  it('손으로 고친 일정(lockAttractions)은 반경을 넓히지 않는다', async () => {
+    const r = await planTrip(
+      { ...baseReq, trip: { ...baseReq.trip, radiusM: 300 }, includeIds: ['sample:myeongdongcathedral'], lockAttractions: true },
+      createSampleProviders(),
+    );
+    expect(r.radiusM).toBe(300);
+  });
+});

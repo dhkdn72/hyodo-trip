@@ -2,8 +2,14 @@
 // 값을 바꾸면 테스트(npm test)로 결과가 어떻게 달라지는지 확인하세요.
 
 export const PLAN_DEFAULTS = {
-  /** 후보 검색 반경(m) */
+  /** 후보 검색 반경(m) — 화면 ①에서 2km·3km·5km 중 고름 */
   radiusM: 3000,
+  /** 후보가 모자라면 반경을 2배씩 넓혀 다시 찾음: 최대 횟수와 상한(m) */
+  radiusExpandSteps: 2,
+  maxRadiusM: 20000,
+  /** 이보다 적으면 '후보가 모자라다'고 봄 (조건·취향·휴무로 거른 뒤 기준) */
+  minAttractionCandidates: 8,
+  minRestaurantCandidates: 3,
 
   /** 체류 시간(분) */
   visitMin: 60,

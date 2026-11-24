@@ -80,8 +80,8 @@ function toLDong(it: any): Place['lDong'] {
 const regionCache = new TtlCache<string[]>();
 
 /**
- * 반경을 덮는 시군구 법정동 코드 목록 ('11|140' 형식).
- *  1) 카카오 좌표→행정구역(coord2regioncode)으로 중심과 반경 둘레 8곳의 법정동 코드
+ * 반경을 덮는 시군구 법정동 코드 목록 ('11|140' 형식, 최대 12곳).
+ *  1) 카카오 좌표→행정구역(coord2regioncode)으로 중심과 반경 둘레의 법정동 코드
  *  2) locationBasedList2 로 받은 장소들의 lDong 코드 (카카오 키가 없거나 실패할 때 보완)
  */
 export async function regionCodesAround(center: LatLng, radiusM: number): Promise<string[]> {
@@ -91,13 +91,17 @@ export async function regionCodesAround(center: LatLng, radiusM: number): Promis
   const set = new Set<string>();
 
   if (env.kakaoRestKey) {
-    const r = Math.min(radiusM, 20000) * 0.9;
-    const dLat = r / 111320;
-    const dLng = r / (111320 * Math.cos((center.lat * Math.PI) / 180));
+    // 중심 + 둘레 8곳 (반경이 4km보다 크면 중간 둘레 8곳도 더해 사이 시군구를 놓치지 않게)
+    const R = Math.min(radiusM, 20000);
+    const rings = R > 4000 ? [0.45, 0.9] : [0.9];
     const points: LatLng[] = [center];
-    for (let k = 0; k < 8; k++) {
-      const a = (k * Math.PI) / 4;
-      points.push({ lat: center.lat + dLat * Math.sin(a), lng: center.lng + dLng * Math.cos(a) });
+    for (const f of rings) {
+      const dLat = (R * f) / 111320;
+      const dLng = (R * f) / (111320 * Math.cos((center.lat * Math.PI) / 180));
+      for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI) / 4 + (f < 0.9 ? Math.PI / 8 : 0);
+        points.push({ lat: center.lat + dLat * Math.sin(a), lng: center.lng + dLng * Math.cos(a) });
+      }
     }
     const codes = await mapLimit(points, 4, (p) => kakaoRegionCode(p).catch(() => null));
     codes.forEach((c) => c && set.add(`${c.regn}|${c.signgu}`));
@@ -116,7 +120,7 @@ export async function regionCodesAround(center: LatLng, radiusM: number): Promis
     });
   }
 
-  const list = [...set].slice(0, 8);
+  const list = [...set].slice(0, 12);
   regionCache.set(ck, list, 24 * 3600_000);
   log('후보 지역(법정동)', list.join(', ') || '없음');
   return list;

@@ -7,6 +7,8 @@ export interface TripForm {
   endTime: string;
   origin: { name: string; pos: LatLng } | null;
   returnToOrigin: boolean;
+  /** 후보를 찾을 반경(m): 2000 동네 위주 · 3000 보통 · 5000 넓게 */
+  radiusM: number;
 }
 
 export interface Adjustments {
@@ -41,6 +43,7 @@ export const DEFAULT_FORM: FormState = {
     endTime: '17:00',
     origin: null,
     returnToOrigin: true,
+    radiusM: 3000,
   },
   condition: {
     walkLimitMin: 30,
@@ -80,7 +83,8 @@ export function saveForm(f: FormState) {
   }
 }
 
-export function toRequest(f: FormState, adj: Adjustments, includePrefs: boolean): PlanRequest {
+/** radiusOverride: 화면 ④에서 고칠 때는 처음 결과가 실제로 쓴 반경(자동으로 넓혔을 수 있음)을 그대로 씀 */
+export function toRequest(f: FormState, adj: Adjustments, includePrefs: boolean, radiusOverride?: number): PlanRequest {
   const t = f.trip;
   return {
     trip: {
@@ -91,6 +95,7 @@ export function toRequest(f: FormState, adj: Adjustments, includePrefs: boolean)
       endTime: t.endTime,
       origin: t.origin!,
       returnToOrigin: t.returnToOrigin,
+      radiusM: radiusOverride ?? t.radiusM,
     },
     condition: f.condition,
     prefs: includePrefs && !f.prefsSkipped ? f.prefs : null,

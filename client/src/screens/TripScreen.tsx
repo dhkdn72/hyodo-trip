@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatKoreanDate, toMin } from '@hyodo/core';
 import { PlaceSearchSheet } from '../components/PlaceSearchSheet';
-import { Header } from '../components/ui';
+import { Header, Segmented } from '../components/ui';
 import type { TripForm } from '../state';
 
 const START_OPTIONS = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '13:00'];
@@ -71,6 +71,23 @@ export function TripScreen({
             </select>
           </div>
           {!timeOk && <span className="error-text">일정은 2시간 이상으로 잡아 주세요.</span>}
+        </div>
+
+        <div className="card">
+          <span className="field-label">얼마나 넓게 다닐까요?</span>
+          <Segmented
+            label="후보를 찾을 반경"
+            value={trip.radiusM}
+            options={[
+              { value: 2000, label: '동네 2km' },
+              { value: 3000, label: '보통 3km' },
+              { value: 5000, label: '넓게 5km' },
+            ]}
+            onChange={(v) => onChange({ ...trip, radiusM: v })}
+          />
+          <span className="field-sub" style={{ marginTop: 6 }}>
+            지역 중심에서 이 거리 안의 장소로 코스를 짜요. 갈 곳이 적으면 자동으로 더 넓혀 찾아요.
+          </span>
         </div>
 
         <button className="field" onClick={() => setSheet('origin')}>
