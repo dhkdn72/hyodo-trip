@@ -22,7 +22,7 @@ cp .env.example .env   # 키를 채운 뒤 npm run dev 다시 실행
 | `npm run dev` | 개발 모드 (서버 + Vite) |
 | `npm run build && npm start` | 화면을 빌드해 서버 하나로 제공 (http://localhost:8787) |
 | `npm run build:demo` | 서버 없이 브라우저에서 예시 데이터로 도는 한 파일짜리 데모 → `client/dist-demo/index.html` |
-| `npm test` | 일정 엔진·API 응답 파싱 테스트 (25개) |
+| `npm test` | 일정 엔진·API 응답 파싱 테스트 (30개) |
 | `npm run typecheck` | 타입 검사 |
 
 `?flow=mvp` 를 주소 뒤에 붙이면 **해커톤 MVP 흐름(① → ② → ④)**, 붙이지 않으면 **학술대회 버전(① ~ ⑤)** 입니다.
@@ -42,8 +42,8 @@ cp .env.example .env   # 키를 채운 뒤 npm run dev 다시 실행
 
 | 단계 | 키가 있을 때 | 키가 없을 때 |
 | --- | --- | --- |
-| 1 후보 수집 | TourAPI `KorService2/locationBasedList2` (관광지 12·문화시설 14·음식점 39) | 예시 데이터 |
-| 2 접근성 필터 | 무장애 여행 정보 `KorWithService2/locationBasedList2` + `detailWithTour2` | 예시 데이터 |
+| 1 후보 수집 | TourAPI `KorService2/areaBasedList2`(법정동 코드) + `locationBasedList2` (관광지 12·문화시설 14·음식점 39) | 예시 데이터 |
+| 2 접근성 필터 | 무장애 여행 정보 `KorWithService2/areaBasedList2`(법정동 코드) + `detailWithTour2` | 예시 데이터 |
 | 3 이동 시간 계산 | 카카오맵 도보 경로 `GET /v2/routing/walk` (`route_mode=ACCESSIBLE`, 편안한 길) · 카카오모빌리티 `GET /v1/directions` | 직선거리 × 보정계수 |
 | 4 순서 최적화 | 우리 코드: 하루 방문지(최대 7곳)의 모든 순서를 비교 | 같음 |
 | 5 쉬는 곳 채우기 | 카카오 로컬 카테고리 검색 `CE7`(카페) | 예시 카페 |
@@ -111,13 +111,24 @@ server/   Express API (/api/status, /api/geo, /api/plan) + 외부 API 어댑터
 client/   React + Vite 모바일 웹 (화면 ① ~ ⑤)
 ```
 
+## TourAPI 사용 시 주의 (2026-11 실제 응답으로 확인)
+
+- `locationBasedList2`(좌표 반경)와 `areaBasedList2`(`areaCode`)는 **옛 지역코드(areacode)가 남아 있는 일부 장소만** 돌려줍니다.
+  명동 반경 3km 관광지가 3곳만 나오고 덕수궁·명동성당·남산골한옥마을이 빠졌습니다 (키워드 검색과 상세 조회로는 정상 조회됨).
+- 새 법정동 코드로 조회해야 전부 나옵니다: `areaBasedList2?lDongRegnCd=11&lDongSignguCd=140` → 서울 중구 관광지 70곳.
+  무장애 여행 정보(`KorWithService2`)도 같습니다 (위치기반 4곳 → 법정동 기준 168곳).
+- 그래서 서버는 반경 중심과 둘레 8곳의 법정동 코드를 카카오 `coord2regioncode`로 구해(앞 2자리 = `lDongRegnCd`, 다음 3자리 = `lDongSignguCd`)
+  시군구별 목록을 받은 뒤 좌표로 반경 안만 남깁니다 (`server/src/providers/tourApi.ts`).
+- 취향·분류 매칭은 `lclsSystmCode2`로 확인한 신분류 코드를 씁니다 (`core/src/prefs.ts` 맨 위 주석).
+  교통시설(VE11)·공연장(VE06)·주점(FD04)·카페(FD05) 등은 후보에서 뺍니다.
+
 ## 확인된 것 / 아직 확인 못 한 것
 
-- ✅ 일정 엔진: 보행 한도·종료 시각·점심 시각 준수, 빼기·바꾸기, 취향·자유 입력 반영 — `npm test`
-- ✅ 화면 ① ~ ⑤ 전체 흐름, 이미지·PDF 저장 — 헤드리스 브라우저로 확인
-- ⚠️ **실제 API 응답은 아직 확인하지 못했습니다.** 개발 환경에서 외부 API에 접속할 수 없어서, 각 API 문서의 응답 구조대로 만든 모의 응답으로
-  파싱을 테스트했습니다 (`server/test/adapters.test.ts`). 키를 넣고 처음 실행할 때 서버 로그를 확인하고, 응답이 다르면 테스트의 모의 응답을 실제 값으로 바꿔 맞추세요.
-  - 특히 `KorWithService2/locationBasedList2` 의 `numOfRows=200` 상한, 무장애 필드 텍스트의 실제 표현(긍정·부정 판별 규칙)은 실데이터로 다듬을 필요가 있습니다.
-- ⚠️ 취향 매칭은 장소명·메뉴 키워드 + 관광타입 기준입니다. KorService2 는 구분류(cat1~3)가 비어 오는 경우가 많아, 신분류(lclsSystm) 코드 매핑은
-  `lclsSystmCode2` 로 코드표를 확인한 뒤 `core/src/prefs.ts` 의 `lcls` 에 추가하면 됩니다.
+- ✅ 일정 엔진: 보행 한도·종료 시각·점심 시각 준수, 빼기·바꾸기, 취향·자유 입력 반영, 중복 장소(덕수궁/대한문) 제외 — `npm test`
+- ✅ 실제 키로 로컬 QA (2026-11-24): TourAPI·무장애 여행 정보·카카오(로컬·도보·모빌리티·지도 SDK) 응답으로 서울 명동·경복궁, 전주 한옥마을, 부산 해운대 일정 생성,
+  화면 ① ~ ⑤, 장소 바꾸기, 한 장 일정표 이미지 생성 확인
+- ⚠️ 무장애 정보는 자유 텍스트라 규칙으로 판별합니다 ('무단차·경사로 설치' → 경사로 있음, '가파름·어려움'이 함께 있으면 배지 없이 원문 확인).
+  장소를 누르면 원문이 보이니 시연 전에 주요 장소는 원문을 확인하세요.
+- ⚠️ 첫 일정 계산 때 공공데이터 API를 수십 번 부릅니다 (시군구 목록 + 상세). 같은 지역은 서버 메모리 캐시(목록 6시간·상세 24시간)로 재사용합니다.
+  개발계정 일일 트래픽을 넘기면 운영계정 승인 후 키를 바꾸세요.
 - ⚠️ 예시 데이터의 무장애 정보·메뉴는 화면 시연용이며 실제 시설 정보가 아닙니다 (음식점·카페 이름에는 '(예시)'를 붙였습니다).

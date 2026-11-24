@@ -1,6 +1,7 @@
 // 카카오 API (헤더: Authorization: KakaoAK {REST_API_KEY})
 //  - 로컬: 주소 검색 /v2/local/search/address.json, 키워드 검색 /v2/local/search/keyword.json,
-//          카테고리 검색 /v2/local/search/category.json (CE7 = 카페)
+//          카테고리 검색 /v2/local/search/category.json (CE7 = 카페),
+//          좌표→행정구역 /v2/local/geo/coord2regioncode.json (region_type 'B' = 법정동, code 10자리)
 //  - 카카오맵 도보 경로: GET https://dapi.kakao.com/v2/routing/walk  (route_mode=ACCESSIBLE = 편안한 길)
 //      응답 route.properties.totalDistance(m)·totalTime(초), route.legs[].steps[].path.points [[x,y]…]
 //  - 카카오모빌리티 자동차 길찾기: GET https://apis-navi.kakaomobility.com/v1/directions
@@ -38,11 +39,12 @@ async function local(path: string, params: Record<string, string | number>) {
 
 export async function kakaoGeoSearch(q: string, kind: 'region' | 'origin'): Promise<GeoResult[]> {
   const out: GeoResult[] = [];
-  if (kind === 'origin') {
-    const a = await local('/v2/local/search/address.json', { query: q, size: 5 }).catch(() => null);
+  {
+    // 지역은 '서울 중구 명동2가' 같은 동 단위, 출발지는 도로명 주소가 먼저 나오게
+    const a = await local('/v2/local/search/address.json', { query: q, size: kind === 'region' ? 3 : 5 }).catch(() => null);
     for (const d of a?.documents ?? []) {
       out.push({
-        name: d.road_address?.address_name || d.address_name,
+        name: kind === 'region' ? d.address_name : d.road_address?.address_name || d.address_name,
         addr: d.address_name,
         pos: { lat: Number(d.y), lng: Number(d.x) },
         source: 'kakao',
@@ -59,6 +61,15 @@ export async function kakaoGeoSearch(q: string, kind: 'region' | 'origin'): Prom
     });
   }
   return out.slice(0, 10);
+}
+
+/** 좌표의 법정동 코드 → TourAPI lDongRegnCd(앞 2자리)·lDongSignguCd(다음 3자리) */
+export async function kakaoRegionCode(p: LatLng): Promise<{ regn: string; signgu: string } | null> {
+  const j = await local('/v2/local/geo/coord2regioncode.json', { x: p.lng.toFixed(6), y: p.lat.toFixed(6) });
+  const b = (j?.documents ?? []).find((d: any) => d.region_type === 'B');
+  const code = String(b?.code ?? '');
+  if (!/^\d{10}$/.test(code)) return null;
+  return { regn: code.slice(0, 2), signgu: code.slice(2, 5) };
 }
 
 export async function kakaoCafes(p: LatLng, radiusM: number): Promise<Place[]> {

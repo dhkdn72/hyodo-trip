@@ -22,7 +22,8 @@ function sourcesNotice(ds: DataSources): string | null {
   const fake: string[] = [];
   if (ds.places === 'sample') fake.push('장소');
   if (ds.access === 'sample') fake.push('무장애 정보');
-  if (ds.walk !== 'kakao' || (ds.taxi !== 'kakao' && ds.taxi !== 'none')) fake.push('이동 시간');
+  // 'mixed'는 카카오 값이 대부분이고 일부 구간(출발=도착 등)만 추정치라 경고하지 않음
+  if (ds.walk === 'estimate' || ds.taxi === 'estimate') fake.push('이동 시간');
   if (!fake.length) return null;
   return `${fake.join('·')}은(는) API 키가 없어 예시 데이터·추정치로 보여 주고 있어요. 실제 방문 계획에 그대로 쓰지 마세요.`;
 }

@@ -13,8 +13,10 @@ export const ACCESS_LABEL: Record<AccessKey, string> = {
 };
 
 const NEGATIVE = /(없음|없습니다|없다|불가|미설치|미비|어려움|어렵|이용\s*불|계단만|계단으로만)/;
-const RAMP_POSITIVE = /(경사로|슬로프|턱\s*(이\s*)?없|단차\s*(가\s*)?없|평탄|휠체어.{0,10}(가능|출입|접근))/;
+const RAMP_POSITIVE = /(경사로|슬로프|무단차|턱\s*(이\s*)?없|단차\s*(가\s*)?없|평탄|휠체어.{0,10}(가능|출입|접근))/;
 const RAMP_NEGATIVE = /(경사로\s*(가\s*)?없|계단만|계단으로만|턱\s*(이\s*)?있|단차\s*(가\s*)?있)/;
+/** 경사로가 있어도 가파르거나 어렵다고 적힌 경우 → 배지를 붙이지 않고 원문으로 확인하게 함 */
+const RAMP_CAUTION = /(가파|급경사|어려움|어렵)/;
 
 function clean(v: unknown): string {
   return typeof v === 'string' ? v.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
@@ -47,6 +49,7 @@ export function accessFromKorWith(item: Record<string, unknown> | null | undefin
   let ramp: AccessItem = { status: 'unknown' };
   if (rampText) {
     if (RAMP_NEGATIVE.test(rampText) && !RAMP_POSITIVE.test(rampText)) ramp = { status: 'no', text: rampText };
+    else if (RAMP_POSITIVE.test(rampText) && RAMP_CAUTION.test(rampText)) ramp = { status: 'unknown', text: rampText };
     else if (RAMP_POSITIVE.test(rampText)) ramp = { status: 'yes', text: rampText };
     else ramp = { status: 'unknown', text: rampText };
   }

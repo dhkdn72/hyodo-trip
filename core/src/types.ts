@@ -40,8 +40,10 @@ export interface Place {
   pos: LatLng;
   /** TourAPI 관광타입 (12 관광지, 14 문화시설, 38 쇼핑, 39 음식점 …) */
   contentTypeId?: string;
-  /** TourAPI 신분류체계 코드 (lclsSystm1~3). 매핑 확장용으로 보관 */
+  /** TourAPI 신분류체계 코드 [lclsSystm1, lclsSystm2, lclsSystm3] (예: ['HS','HS01','HS010100']) */
   lcls?: string[];
+  /** TourAPI 법정동 코드 (lDongRegnCd 시도 2자리, lDongSignguCd 시군구 3자리) */
+  lDong?: { regn: string; signgu: string };
   image?: string;
   /** 음식점 대표·취급 메뉴 (detailIntro2 firstmenu/treatmenu) */
   menu?: string;

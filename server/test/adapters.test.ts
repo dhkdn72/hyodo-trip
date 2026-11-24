@@ -42,11 +42,33 @@ describe('TourAPI KorService2', () => {
       return { body: okTour('') };
     };
     const list = await tourSearch({ lat: 37.57, lng: 126.98 }, 3000, 'attraction');
-    expect(list.map((p) => p.name)).toEqual(['경복궁', '미술관']);
-    expect(list[0]).toMatchObject({ id: 'tour:126508', pos: { lat: 37.5796, lng: 126.977 }, contentTypeId: '12', image: 'http://img' });
-    expect(calls[0].url).toContain('serviceKey=TEST%2BKEY%2F%3D%3D&');
-    expect(calls[0].url).toContain('mapX=126.98');
-    expect(calls[0].url).toContain('arrange=E');
+    // 중심에서 가까운 순
+    expect(list.map((p) => p.name)).toEqual(['미술관', '경복궁']);
+    expect(list[1]).toMatchObject({ id: 'tour:126508', pos: { lat: 37.5796, lng: 126.977 }, contentTypeId: '12', image: 'http://img' });
+    const tourCall = calls.find((c) => c.url.includes('contentTypeId=12'))!;
+    expect(tourCall.url).toContain('serviceKey=TEST%2BKEY%2F%3D%3D&');
+    expect(tourCall.url).toContain('mapX=126.98');
+    expect(tourCall.url).toContain('arrange=E');
+  });
+
+  it('반경을 덮는 시군구 법정동 코드로 areaBasedList2 를 불러 합치고, 반경 밖은 버린다', async () => {
+    const { tourSearch } = await import('../src/providers/tourApi.ts');
+    handler = (url) => {
+      if (url.includes('coord2regioncode'))
+        return { body: { documents: [{ region_type: 'B', code: '1114010300' }, { region_type: 'H', code: '1114055000' }] } };
+      if (url.includes('areaBasedList2') && url.includes('lDongRegnCd=11') && url.includes('lDongSignguCd=140') && url.includes('contentTypeId=12'))
+        return {
+          body: okTour([
+            { contentid: '126509', contenttypeid: '12', title: '덕수궁', mapx: '126.9765746344', mapy: '37.5650549194', lDongRegnCd: '11', lDongSignguCd: '140', lclsSystm3: 'HS010100' },
+            { contentid: '999', contenttypeid: '12', title: '먼 곳', mapx: '127.2', mapy: '37.7', lDongRegnCd: '11', lDongSignguCd: '140' },
+          ]),
+        };
+      return { body: okTour('') };
+    };
+    const list = await tourSearch({ lat: 37.5636, lng: 126.9834 }, 3000, 'attraction');
+    expect(list.map((p) => p.name)).toEqual(['덕수궁']);
+    expect(list[0].lDong).toEqual({ regn: '11', signgu: '140' });
+    expect(calls.some((c) => c.url.includes('coord2regioncode'))).toBe(true);
   });
 
   it('인증 오류(XML)는 메시지를 담아 실패한다', async () => {

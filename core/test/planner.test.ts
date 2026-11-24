@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  sameSpot,
   accessFromKorWith,
   buildLeg,
   closedOn,
@@ -72,6 +73,15 @@ describe('무장애 정보 (F3)', () => {
     expect(a.items.ramp?.status).toBe('yes');
     expect(a.items.elevator?.status).toBe('unknown');
     expect(a.items.restroom?.status).toBe('no');
+  });
+
+  it('실제 응답 문구: 무단차·경사로 설치 → 경사로 있음, 가파르거나 어렵다고 하면 확인 필요', () => {
+    expect(accessFromKorWith({ exit: '주출입구 무단차관람 동선 내에 전각마다 경사로 설치되어 있음' }).items.ramp?.status).toBe('yes');
+    expect(accessFromKorWith({ exit: '주출입구 무단차주출입구 경사로가 가파름' }).items.ramp?.status).toBe('unknown');
+    expect(
+      accessFromKorWith({ route: '성당으로 접근할 때는 가파른 경사 때문에 어려움이 있지만 입구로 진입하면 내부는 경사 없이 휠체어 이동 가능' }).items.ramp
+        ?.status,
+    ).toBe('unknown');
   });
 
   it('긍정·부정이 섞이면 긍정으로 본다', () => {
@@ -221,5 +231,18 @@ describe('화면 ④ 손으로 고치기', () => {
     );
     const meal = r.stops.find((s) => s.type === 'meal')!;
     expect(meal.place.menu).toMatch(/곰탕|국밥/);
+  });
+});
+
+describe('중복 장소', () => {
+  const P = (name: string, lat: number, lng: number): Place => ({ id: name, source: 'tourapi', kind: 'attraction', name, pos: { lat, lng } });
+  it('덕수궁과 덕수궁 대한문(같은 좌표)은 같은 곳으로 본다', () => {
+    expect(sameSpot(P('덕수궁', 37.5650549194, 126.9765746344), P('덕수궁 대한문', 37.5650549194, 126.9765746344))).toBe(true);
+  });
+  it('이름이 겹쳐도 멀리 떨어져 있으면 다른 곳', () => {
+    expect(sameSpot(P('경복궁', 37.5760, 126.9767), P('경복궁', 35.5347, 129.3503))).toBe(false);
+  });
+  it('가까워도 이름이 다르면 다른 곳 (60m 밖)', () => {
+    expect(sameSpot(P('국립고궁박물관', 37.5768, 126.9752), P('경복궁', 37.5760, 126.9767))).toBe(false);
   });
 });

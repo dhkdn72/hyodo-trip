@@ -6,7 +6,7 @@ import { PLAN_DEFAULTS, type PlanDefaults } from './config.ts';
 import { buildExplainContext, explanationIsGrounded } from './explain.ts';
 import { centroid, haversine, parseDate, toMin } from './geo.ts';
 import { optimizeOrder, type OptimizeResult } from './optimize.ts';
-import { prefScore, ruleFreeText, wantsRelaxed } from './prefs.ts';
+import { categoryCheck, prefScore, ruleFreeText, wantsRelaxed } from './prefs.ts';
 import { runTimeline, type SeqNode, type TimelineCtx } from './schedule.ts';
 import { TravelMatrix } from './travel.ts';
 import type {
@@ -70,6 +70,22 @@ function dedupe(list: Place[]): Place[] {
   return out;
 }
 
+const normName = (s: string) => s.replace(/\[[^\]]*\]|\([^)]*\)|\s|·/g, '');
+
+/**
+ * 같은 곳으로 봐야 하는 장소 (덕수궁 ↔ 덕수궁 대한문, 같은 좌표에 등록된 하위 시설 등)
+ *  - 60m 안이면 같은 곳
+ *  - 600m 안이고 한쪽 이름이 다른 쪽 이름을 포함하면 같은 곳
+ */
+export function sameSpot(a: Place, b: Place): boolean {
+  const d = haversine(a.pos, b.pos);
+  if (d < 60) return true;
+  if (d > 600) return false;
+  const x = normName(a.name);
+  const y = normName(b.name);
+  return x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x));
+}
+
 function regionShort(name: string) {
   const first = name.split(/[\s·,]+/).filter(Boolean)[0];
   return first || name;
@@ -96,9 +112,11 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     providers.searchPlaces(trip.center, radius, 'attraction'),
     providers.searchPlaces(trip.center, radius, 'restaurant'),
   ]);
-  const allAttr = dedupe(attrRaw).filter((p) => !exclude.has(p.id) || include.has(p.id));
+  const pinnedIds = Object.values(pinned);
+  // 교통시설·주점·카페처럼 맞지 않는 분류는 처음부터 뺌 (사용자가 직접 넣은 곳은 유지)
+  const allAttr = dedupe(attrRaw).filter((p) => include.has(p.id) || (!exclude.has(p.id) && !categoryCheck(p).excluded));
   const allRest = dedupe(restRaw).filter(
-    (p) => (!exclude.has(p.id) || Object.values(pinned).includes(p.id)) && !CAFE_NAME.test(p.name),
+    (p) => pinnedIds.includes(p.id) || (!exclude.has(p.id) && !CAFE_NAME.test(p.name) && !categoryCheck(p).excluded),
   );
   pipeline.push({
     key: 'collect',
@@ -117,7 +135,7 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
   const baseScore = (p: Place) => {
     const dist = haversine(trip.center, p.pos);
     p.distFromCenter = Math.round(dist);
-    return 1 - 0.3 * Math.min(1, dist / radius) + (p.image ? 0.1 : 0);
+    return 1 - 0.3 * Math.min(1, dist / radius) + (p.image ? 0.1 : 0) + categoryCheck(p).bonus;
   };
   const prelim = (list: Place[]) =>
     list
@@ -224,10 +242,12 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     const c = around.length ? centroid(around.map((p) => p.pos)) : trip.center;
     const covered = new Set(around.flatMap((p) => matchedOf.get(p.id) ?? []));
     const fresh = s.matched.some((m) => prefs?.interests.includes(m) && !covered.has(m)) ? 0.5 : 0;
-    return s.score + fresh - (0.35 * haversine(c, s.place.pos)) / 1000 - (0.1 * haversine(origin.pos, s.place.pos)) / 1000;
+    // 이미 채운 관심사를 또 채우는 곳은 가산점을 대부분 덜어 냄 (궁궐 두 곳보다 가까운 다른 곳)
+    const repeat = s.matched.filter((m) => prefs?.interests.includes(m) && covered.has(m)).length * 0.6;
+    return s.score + fresh - repeat - (0.35 * haversine(c, s.place.pos)) / 1000 - (0.1 * haversine(origin.pos, s.place.pos)) / 1000;
   };
   const nextNear = (selection: Place[]): Scored | null => {
-    const pool = attrCands.filter((s) => !selection.some((p) => p.id === s.place.id));
+    const pool = attrCands.filter((s) => !selection.some((p) => p.id === s.place.id || sameSpot(p, s.place)));
     if (!pool.length) return null;
     if (!selection.length) return pool[0];
     return pool.reduce((best, s) => (clusterValue(s, selection) > clusterValue(best, selection) ? s : best));
@@ -382,18 +402,18 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     const leg = s.legFromPrev;
     if (leg?.overLimit && leg.mode === 'taxi') {
       const from = stops[i - 1]?.place.name ?? '';
-      warnings.push(`${from} → ${s.place.name}: 걸으면 ${leg.walkMinutes}분이라 택시(${leg.minutes}분)로 바꿨어요.`);
+      warnings.push(`${from} → ${s.place.name}: 걸으면 ${leg.walkMinutes}분이라 택시(약 ${leg.driveMinutes ?? leg.minutes}분)로 바꿨어요.`);
     }
   });
   if (finalTl.overflowMin > 0) {
     warnings.push(`종료 시각보다 ${finalTl.overflowMin}분 늦게 끝나요. 장소를 하나 빼면 여유가 생겨요.`);
   }
-  if (cond.needs.stepFree || cond.needs.parking) {
-    const unknown = stops
-      .filter((s) => s.type === 'visit' || s.type === 'meal')
-      .filter((s) => (cond.needs.stepFree && stepFreeStatus(s.place) === 'unknown') || (cond.needs.parking && accessStatus(s.place, 'parking') === 'unknown'))
-      .map((s) => s.place.name);
-    if (unknown.length) warnings.push(`${unknown.join(', ')}은(는) 무장애 정보가 없어요. 방문 전에 전화로 확인해 주세요.`);
+  {
+    const placesInPlan = stops.filter((s) => s.type === 'visit' || s.type === 'meal').map((s) => s.place);
+    const say = (label: string, names: string[]) =>
+      names.length && warnings.push(`${names.join(', ')}은(는) ${label} 정보가 없어요. 방문 전에 전화로 확인해 주세요.`);
+    if (cond.needs.stepFree) say('엘리베이터·경사로', placesInPlan.filter((p) => stepFreeStatus(p) === 'unknown').map((p) => p.name));
+    if (cond.needs.parking) say('주차', placesInPlan.filter((p) => accessStatus(p, 'parking') === 'unknown').map((p) => p.name));
   }
   if (meals.length && !best.restaurants.length) warnings.push('근처에서 조건에 맞는 식당을 찾지 못해 식사를 넣지 못했어요.');
 
@@ -420,7 +440,7 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
   const chosenIds = new Set(stops.map((s) => s.place.id));
   const alternatives = {
     attractions: attrCands
-      .filter((s) => !chosenIds.has(s.place.id))
+      .filter((s) => !chosenIds.has(s.place.id) && !selection.some((p) => sameSpot(p, s.place)))
       .sort((a, b) => clusterValue(b, selection) - clusterValue(a, selection))
       .slice(0, 8)
       .map((s) => s.place),

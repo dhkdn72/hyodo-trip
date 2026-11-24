@@ -25,7 +25,17 @@ export function App() {
 
   // 서버 상태 확인. 키가 없으면(예시 데이터 모드) 첫 화면을 예시 지역으로 채워 둠
   useEffect(() => {
-    getStatus()
+    const getStatusRetry = async (tries = 6): Promise<ServerStatus> => {
+      for (let i = 0; ; i++) {
+        try {
+          return await getStatus();
+        } catch (e) {
+          if (i >= tries - 1) throw e;
+          await wait(1000);
+        }
+      }
+    };
+    getStatusRetry()
       .then((s) => {
         setStatus(s);
         if (!s.providers.kakao) {

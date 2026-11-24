@@ -31,7 +31,7 @@ export function PlaceSearchSheet({
       const r = await geoSearch(query, kind);
       setResults(r.results);
       setSource(r.source);
-      if (!r.results.length) setErr('검색 결과가 없어요. 다른 이름이나 주소로 찾아 보세요.');
+      if (!r.results.length && query) setErr('검색 결과가 없어요. 다른 이름이나 주소로 찾아 보세요.');
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -71,6 +71,7 @@ export function PlaceSearchSheet({
       </form>
       {source === 'sample' && sampleNote && <p className="notice" style={{ marginTop: 10 }}>{sampleNote}</p>}
       {err && <p className="error-text">{err}</p>}
+      {!results.length && !err && !busy && <p className="subtitle" style={{ marginTop: 12 }}>동네 이름, 장소 이름, 주소로 찾을 수 있어요.</p>}
       <ul className="result-list">
         {results.map((r, i) => (
           <li key={`${r.name}-${i}`}>

@@ -35,7 +35,8 @@ app.get('/api/status', (_req, res) => {
 app.get('/api/geo', async (req, res) => {
   const q = String(req.query.q ?? '').trim().slice(0, 60);
   const kind = req.query.kind === 'origin' ? 'origin' : 'region';
-  if (!env.kakaoRestKey || !q) return res.json({ results: sampleGeoSearch(q), source: 'sample' });
+  if (!env.kakaoRestKey) return res.json({ results: sampleGeoSearch(q), source: 'sample' });
+  if (!q) return res.json({ results: [], source: 'kakao' });
   try {
     res.json({ results: await kakaoGeoSearch(q, kind), source: 'kakao' });
   } catch (e) {
