@@ -13,7 +13,7 @@ import { createSampleProviders, estimateDrive, estimateWalk, sampleDetail, type 
 import { env, llmKind } from '../env.ts';
 import { attachKorWith } from './korWith.ts';
 import { kakaoCafes, kakaoDrive, kakaoWalk, logKakaoError } from './kakao.ts';
-import { llmExplain, llmFreeText } from './llm.ts';
+import { llmExplain, llmFreeText, llmLastError } from './llm.ts';
 import { placeDetail } from './placeDetail.ts';
 import { semanticEnabled, semanticScore, semanticStatus } from './semantic.ts';
 export { warmUpSemantic } from './semantic.ts';
@@ -72,6 +72,7 @@ export function providerStatus() {
     korWith: !!(env.tourApiKey && env.korWithApiKey),
     kakao: !!env.kakaoRestKey,
     llm: llmKind(),
+    llmError: llmLastError(),
     semantic: semanticStatus(),
   };
 }

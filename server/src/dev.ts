@@ -3,6 +3,8 @@
 //      반경 안의 관광지·쇼핑 후보를 앱과 같은 기준으로 모아 소개글·분류 이름과 함께 eval/data/<name>.json 에 저장
 //  GET /api/dev/eval-run
 //      eval/ 의 데이터·정답으로 추천 방식 비교 → eval/results.md
+//  GET /api/dev/llm-models, /api/dev/llm-probe?model=..&effort=low
+//      LLM 키로 쓸 수 있는 모델 목록, 짧은 호출 하나의 응답 시간 (모델 고르기용)
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,12 +13,13 @@ import { categoryCheck, haversine, isShoppingSpot, type Place } from '@hyodo/cor
 import { env } from './env.ts';
 import { EVAL_DIR, reportMarkdown, runEval, writeReport, type EvalPlace } from './evalRecommend.ts';
 import { log, mapLimit } from './http.ts';
+import { llmListModels, llmProbe } from './providers/llm.ts';
 import { lclsNames, overviewOf } from './providers/semantic.ts';
 import { tourSearch } from './providers/tourApi.ts';
 
 export function mountDevTools(app: Express) {
   if (!env.devTools) return;
-  log('개발 도구 켜짐: /api/dev/eval-dump, /api/dev/eval-run');
+  log('개발 도구 켜짐: /api/dev/eval-dump, /api/dev/eval-run, /api/dev/llm-models, /api/dev/llm-probe');
 
   app.get('/api/dev/eval-dump', async (req, res) => {
     const name = String(req.query.name ?? '');
@@ -56,6 +59,21 @@ export function mountDevTools(app: Express) {
       log('eval-dump 오류', e);
       res.status(500).json({ error: (e as Error).message });
     }
+  });
+
+  app.get('/api/dev/llm-models', async (_req, res) => {
+    try {
+      res.json({ models: await llmListModels() });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message.slice(0, 200) });
+    }
+  });
+
+  app.get('/api/dev/llm-probe', async (req, res) => {
+    const model = String(req.query.model ?? env.openaiModel ?? '');
+    const effort = req.query.effort ? String(req.query.effort) : undefined;
+    if (!/^[\w./:-]{2,80}$/.test(model) || (effort && !/^[a-z]{3,10}$/.test(effort))) return res.status(400).json({ error: '모델 이름이 잘못됐어요.' });
+    res.json(await llmProbe(model, effort));
   });
 
   app.get('/api/dev/eval-run', async (_req, res) => {

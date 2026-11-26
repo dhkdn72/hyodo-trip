@@ -143,7 +143,8 @@ cp .env.example .env   # 키를 채운 뒤 npm run dev 다시 실행
 | `KORWITH_API_KEY` | '한국관광공사_무장애 여행 정보' 활용신청 | 같은 계정이면 비워 두기(위 키 사용) |
 | `KAKAO_REST_API_KEY` | 카카오 디벨로퍼스 앱 → [카카오맵] 사용 설정 ON | 2026-07-21부터 카카오맵 API 이용 방식·무료 쿼터가 바뀜. 무료 쿼터는 계정에서 처음 활성화한 앱에만 |
 | `VITE_KAKAO_JS_KEY` | 같은 앱의 JavaScript 키 | [앱] > [플랫폼 키] > [JavaScript 키] > [JavaScript SDK 도메인](지도)과 [앱] > [제품 링크 관리] > [웹 도메인](카카오톡 공유)에 접속 주소 등록 |
-| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`+`OPENAI_MODEL` | 각 콘솔 | 없으면 템플릿 |
+| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`+`OPENAI_MODEL` | 각 콘솔 | 없으면 규칙·템플릿 |
+| (무료) Google Gemini | [Google AI Studio](https://aistudio.google.com/api-keys) — 개인 Google 계정으로 키 만들기 (학교 계정은 프로젝트 만들기가 막힐 수 있음) | `OPENAI_API_KEY`=AI Studio 키, `OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`, `OPENAI_MODEL=gemini-3.5-flash-lite,gemini-3.5-flash` (쉼표: 앞 모델이 혼잡·시간 초과면 다음 모델). 무료 등급은 시간대에 따라 503(혼잡)이 잦아 한 번 호출 8초 제한 후 다음 모델로 넘어가고, 다 실패하면 규칙·템플릿 |
 
 API 호출을 줄이려고 서버 메모리에 캐시합니다 (목록 6시간, 상세·무장애 24시간, 경로 1시간).
 도보 경로는 A→B와 B→A를 같다고 보고 한 번만 부르고, 자동차 경로는 도보가 보행 한도를 넘는 구간에만 부릅니다.

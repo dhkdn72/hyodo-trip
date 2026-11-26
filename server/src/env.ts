@@ -36,7 +36,14 @@ export const env = {
   anthropicModel: v('ANTHROPIC_MODEL') ?? 'claude-haiku-5-5',
   openaiKey: v('OPENAI_API_KEY'),
   openaiModel: v('OPENAI_MODEL'),
-  openaiBaseUrl: v('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1',
+  openaiBaseUrl: (v('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1').replace(/\/+$/, ''),
+  /**
+   * 추론(생각) 정도 — Gemini 같은 추론 모델은 기본값이 높아 느리고 토큰을 많이 써서 낮춤.
+   * 비우면 Gemini 주소일 때 'low', 그 밖에는 보내지 않음 (추론 모델이 아닌 OpenAI 모델은 이 값을 받지 않음)
+   */
+  openaiReasoning: v('OPENAI_REASONING_EFFORT'),
+  /** LLM 한 번 호출 제한 시간(ms). 넘으면 다음 모델(또는 한 번 더)로 */
+  llmTimeoutMs: Number(v('LLM_TIMEOUT_MS') ?? 8000),
   /** 앱(Capacitor 등)에서 호출할 때 허용할 Origin, 쉼표 구분. 비우면 모두 허용 */
   corsOrigins: (v('CORS_ORIGINS') ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   /** TourAPI MobileApp 파라미터 */
