@@ -18,6 +18,8 @@ export interface SeqNode {
 
 export interface TimelineCtx {
   origin: Place;
+  /** 하루를 마치고 갈 곳 (없으면 origin). 여러 날 일정에서는 숙소 */
+  endPlace?: Place;
   start: number;
   end: number;
   returnToOrigin: boolean;
@@ -164,9 +166,10 @@ export function runTimeline(nodes: SeqNode[], ctx: TimelineCtx, autoRest: boolea
   }
 
   if (ctx.returnToOrigin) {
-    const leg = ctx.legOf(cur, ctx.origin);
+    const endP = ctx.endPlace ?? ctx.origin;
+    const leg = ctx.legOf(cur, endP);
     addLeg(leg);
-    stops.push({ type: 'end', place: ctx.origin, arrive: fmtMin(t), depart: fmtMin(t), stayMin: 0, legFromPrev: leg });
+    stops.push({ type: 'end', place: endP, arrive: fmtMin(t), depart: fmtMin(t), stayMin: 0, legFromPrev: leg });
   }
 
   const overflow = Math.max(0, t - ctx.end);

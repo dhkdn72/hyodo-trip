@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Place, PlanResult, Stop } from '@hyodo/core';
+import type { DayAdjust, Place, PlanRequest, Stop, TripPlan } from '@hyodo/core';
 import { LoadingSteps } from './components/LoadingSteps';
 import { fetchPlan, getStatus, IS_DEMO, type ServerStatus } from './lib/api';
 import { ConditionScreen } from './screens/ConditionScreen';
@@ -17,7 +17,8 @@ export function App() {
   const [form, setForm] = useState<FormState>(loadForm);
   const [step, setStep] = useState<Step>(1);
   const [adj, setAdj] = useState<Adjustments>(EMPTY_ADJ);
-  const [result, setResult] = useState<PlanResult | null>(null);
+  const [result, setResult] = useState<TripPlan | null>(null);
+  const [dayIdx, setDayIdx] = useState(0);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +99,10 @@ export function App() {
       const [r] = await Promise.all([fetchPlan(toRequest(f, nextAdj, FLOW === 'full', radiusOverride)), fullScreen ? wait(1400) : null]);
       setResult(r);
       setAdj(nextAdj);
-      if (fullScreen) go(4);
+      if (fullScreen) {
+        setDayIdx(0);
+        go(4);
+      } else setDayIdx((i) => Math.min(i, r.days.length - 1));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -108,31 +112,44 @@ export function App() {
   };
 
   /**
-   * 화면 ④에서 손댄 장소만 바뀌도록, 지금 일정의 나머지 관광지·식당을 고정한 채 다시 계산
+   * 화면 ④에서 손댄 장소만 바뀌도록, 모든 날짜의 나머지 관광지·식당과 숙소를 고정한 채 다시 계산
    * (빼기: 그 장소만 빠짐 / 바꾸기: 그 장소만 바뀜. 식당을 빼면 그 끼니만 다른 식당으로)
    */
-  const lockedFrom = (r: PlanResult, a: Adjustments, dropId: string): Adjustments => {
-    const visits = r.stops.filter((s) => s.type === 'visit').map((s) => s.place.id);
-    const pinned: Adjustments['pinnedMeals'] = {};
-    r.stops.forEach((s) => {
-      if (s.type === 'meal' && s.place.id !== dropId) pinned[s.mealLabel ?? 'lunch'] = s.place.id;
+  const lockedAll = (plan: TripPlan, a: Adjustments, dropId?: string): Adjustments => {
+    const days: DayAdjust[] = plan.days.map((d) => {
+      const pinned: NonNullable<DayAdjust['pinnedMeals']> = {};
+      d.stops.forEach((s) => {
+        if (s.type === 'meal' && s.place.id !== dropId) pinned[s.mealLabel ?? 'lunch'] = s.place.id;
+      });
+      return {
+        includeIds: d.stops.filter((s) => s.type === 'visit' && s.place.id !== dropId).map((s) => s.place.id),
+        pinnedMeals: pinned,
+        lockAttractions: true,
+      };
     });
-    return {
-      excludeIds: uniq([...a.excludeIds, dropId]),
-      includeIds: visits.filter((id) => id !== dropId),
-      pinnedMeals: pinned,
-      lock: true,
-    };
+    const l = plan.lodging;
+    const lodging: PlanRequest['lodging'] = l
+      ? { name: l.name, pos: l.pos, id: l.id, recommended: plan.lodgingSource === 'recommended' }
+      : undefined;
+    return { excludeIds: dropId ? uniq([...a.excludeIds, dropId]) : a.excludeIds, days, lock: true, lodging };
   };
 
   // 고칠 때는 처음 결과가 실제로 쓴 반경으로 (자동으로 넓혔다면 넓힌 반경 안의 장소를 그대로 찾을 수 있게)
-  const onRemove = (s: Stop) => result && make(lockedFrom(result, adj, s.place.id), false, form, result.radiusM);
+  const onRemove = (s: Stop) => result && make(lockedAll(result, adj, s.place.id), false, form, result.radiusM);
   const onReplace = (s: Stop, p: Place) => {
     if (!result) return;
-    const base = lockedFrom(result, adj, s.place.id);
+    const base = lockedAll(result, adj, s.place.id);
     base.excludeIds = base.excludeIds.filter((x) => x !== p.id);
-    if (s.type === 'meal') base.pinnedMeals = { ...base.pinnedMeals, [s.mealLabel ?? 'lunch']: p.id };
-    else base.includeIds = uniq([...base.includeIds, p.id]);
+    const day = base.days[dayIdx];
+    if (s.type === 'meal') day.pinnedMeals = { ...day.pinnedMeals, [s.mealLabel ?? 'lunch']: p.id };
+    else day.includeIds = uniq([...(day.includeIds ?? []), p.id]);
+    make(base, false, form, result.radiusM);
+  };
+  // 숙소 바꾸기: 다니는 곳은 그대로, 순서·이동만 새 숙소 기준으로
+  const onReplaceLodging = (p: Place) => {
+    if (!result) return;
+    const base = lockedAll(result, adj);
+    base.lodging = { name: p.name, pos: p.pos, id: p.id, recommended: true };
     make(base, false, form, result.radiusM);
   };
 
@@ -182,17 +199,20 @@ export function App() {
         />
       ) : shown === 4 && result ? (
         <ResultScreen
-          result={result}
+          plan={result}
+          dayIdx={dayIdx}
+          onDay={setDayIdx}
           busy={busy}
           adjusted={adj.lock}
           onBack={back}
           onRemove={onRemove}
           onReplace={onReplace}
+          onReplaceLodging={onReplaceLodging}
           onResetAdjust={() => make(EMPTY_ADJ, false)}
           onShare={() => go(5)}
         />
       ) : shown === 5 && result ? (
-        <ShareScreen result={result} onBack={back} />
+        <ShareScreen plan={result} onBack={back} />
       ) : null}
     </main>
   );

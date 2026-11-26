@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { formatKoreanDate, type PlanResult, type Stop } from '@hyodo/core';
+import { formatKoreanDate, type PlanResult, type Stop, type TripPlan } from '@hyodo/core';
 import { Header, Sheet, Toast } from '../components/ui';
 import { IS_DEMO } from '../lib/api';
 import { download, renderCard, savePdf, shareToKakaoTalk } from '../lib/share';
@@ -19,15 +19,42 @@ function rowLabel(s: Stop): string | null {
     case 'rest':
       return s.restInPlace ? '잠시 쉬기' : '카페에서 쉬기';
     case 'end':
-      return HOME.test(s.place.name) ? `숙소에서 쉬기${taxi}` : `${s.place.name} 도착${taxi}`;
+      return s.place.kind === 'lodging' || HOME.test(s.place.name) ? `숙소에서 쉬기${taxi}` : `${s.place.name} 도착${taxi}`;
     default:
       return null;
   }
 }
 
-/** 화면 ⑤ 한 장 일정표 공유 — F5 */
-export function ShareScreen({ result, onBack }: { result: PlanResult; onBack: () => void }) {
-  const [title, setTitle] = useState(result.title);
+const rowsOf = (d: PlanResult) =>
+  d.stops.map((s) => ({ s, label: rowLabel(s) })).filter((r): r is { s: Stop; label: string } => !!r.label);
+
+function Rows({ rows }: { rows: { s: Stop; label: string }[] }) {
+  return (
+    <ul className="share-rows">
+      {rows.map(({ s, label }, i) => (
+        <li key={i}>
+          <time>{s.arrive}</time>
+          <span>
+            {label.endsWith(' · 택시') ? (
+              <>
+                {label.replace(/ · 택시$/, '')}
+                <span className="taxi"> · 택시</span>
+              </>
+            ) : (
+              label
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** 화면 ⑤ 한 장 일정표 공유 — F5 (여러 날이면 날짜별로 나눠 한 장에) */
+export function ShareScreen({ plan, onBack }: { plan: TripPlan; onBack: () => void }) {
+  const result = plan.days[0];
+  const multi = plan.days.length > 1;
+  const [title, setTitle] = useState(plan.title);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -35,14 +62,11 @@ export function ShareScreen({ result, onBack }: { result: PlanResult; onBack: ()
   /** 데모 페이지(저장·공유가 막힌 곳)에서는 만들어진 이미지를 화면에 보여 줌 */
   const [preview, setPreview] = useState<string | null>(null);
 
-  const rows = useMemo(
-    () =>
-      result.stops
-        .map((s) => ({ s, label: rowLabel(s) }))
-        .filter((r): r is { s: Stop; label: string } => !!r.label),
-    [result],
-  );
-  const hasTaxi = result.summary.taxiLegs > 0;
+  const dayRows = useMemo(() => plan.days.map(rowsOf), [plan]);
+  const rows = dayRows[0];
+  const hasTaxi = plan.days.some((d) => d.summary.taxiLegs > 0);
+  const hasRest = plan.days.some((d) => d.summary.restCount > 0);
+  const last = plan.days[plan.days.length - 1];
   const fileBase = `효도여행_일정_${result.date.replace(/-/g, '')}`;
   const description = rows.map((r) => `${r.s.arrive} ${r.label}`).slice(0, 4).join(' / ');
 
@@ -72,30 +96,28 @@ export function ShareScreen({ result, onBack }: { result: PlanResult; onBack: ()
         </label>
         <input id="share-title" className="title-input" value={title} maxLength={24} onChange={(e) => setTitle(e.target.value)} />
 
-        <div ref={cardRef} className="share-card" aria-label="한 장 일정표 미리보기">
+        <div ref={cardRef} className={`share-card ${multi ? 'compact' : ''}`} aria-label="한 장 일정표 미리보기">
           <p className="share-title">{title || ' '}</p>
-          <p className="share-date">{formatKoreanDate(result.date, true)}</p>
-          <ul className="share-rows">
-            {rows.map(({ s, label }, i) => (
-              <li key={i}>
-                <time>{s.arrive}</time>
-                <span>
-                  {label.endsWith(' · 택시') ? (
-                    <>
-                      {label.replace(/ · 택시$/, '')}
-                      <span className="taxi"> · 택시</span>
-                    </>
-                  ) : (
-                    label
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <p className="share-date">
+            {multi ? `${formatKoreanDate(result.date)} ~ ${formatKoreanDate(last.date)}` : formatKoreanDate(result.date, true)}
+          </p>
+          {multi && plan.lodging && <p className="share-lodging">숙소 · {plan.lodging.name}</p>}
+          {multi ? (
+            plan.days.map((d, i) => (
+              <div className="share-day" key={d.date}>
+                <p className="share-day-head">
+                  {i + 1}일차 · {formatKoreanDate(d.date)}
+                </p>
+                <Rows rows={dayRows[i]} />
+              </div>
+            ))
+          ) : (
+            <Rows rows={rows} />
+          )}
           <div className="share-foot">
             {hasTaxi && <div>{result.condition.walkLimitMin}분 넘게 걷는 길은 택시로 가요</div>}
-            {result.summary.restCount > 0 && <div>중간중간 카페에서 쉬어 가요</div>}
-            {!hasTaxi && !result.summary.restCount && <div>천천히 다녀오세요</div>}
+            {hasRest && <div>중간중간 카페에서 쉬어 가요</div>}
+            {!hasTaxi && !hasRest && <div>천천히 다녀오세요</div>}
           </div>
         </div>
         <p className="subtitle" style={{ fontSize: 13 }}>

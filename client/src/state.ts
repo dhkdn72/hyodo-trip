@@ -1,4 +1,4 @@
-import type { ConditionInput, LatLng, PlanRequest, PrefInput } from '@hyodo/core';
+import type { ConditionInput, DayAdjust, LatLng, PlanRequest, PrefInput } from '@hyodo/core';
 
 export interface TripForm {
   region: { name: string; pos: LatLng } | null;
@@ -9,14 +9,20 @@ export interface TripForm {
   returnToOrigin: boolean;
   /** 후보를 찾을 반경(m): 2000 동네 위주 · 3000 보통 · 5000 넓게 */
   radiusM: number;
+  /** 0 당일치기 · 1 = 1박 2일 · 2 = 2박 3일 */
+  nights: number;
+  /** 여러 날 일정의 숙소. null 이면 추천받기 */
+  lodging: { name: string; pos: LatLng } | null;
 }
 
 export interface Adjustments {
   excludeIds: string[];
-  includeIds: string[];
-  pinnedMeals: { lunch?: string; dinner?: string };
+  /** 날짜별로 손으로 고친 내용 (days[0] = 1일차, 당일치기도 days[0]) */
+  days: DayAdjust[];
   /** 화면 ④에서 손으로 고친 뒤에는 나머지 장소를 그대로 둠 */
   lock: boolean;
+  /** 지금 결과의 숙소를 유지·교체할 때 */
+  lodging?: PlanRequest['lodging'];
 }
 
 export interface FormState {
@@ -44,6 +50,8 @@ export const DEFAULT_FORM: FormState = {
     origin: null,
     returnToOrigin: true,
     radiusM: 3000,
+    nights: 0,
+    lodging: null,
   },
   condition: {
     walkLimitMin: 30,
@@ -53,11 +61,11 @@ export const DEFAULT_FORM: FormState = {
     lunchTime: '12:00',
     dinnerTime: null,
   },
-  prefs: { foods: [], interests: [], activities: [], freeText: '' },
+  prefs: { foods: [], interests: [], activities: [], etc: {}, freeText: '' },
   prefsSkipped: false,
 };
 
-export const EMPTY_ADJ: Adjustments = { excludeIds: [], includeIds: [], pinnedMeals: {}, lock: false };
+export const EMPTY_ADJ: Adjustments = { excludeIds: [], days: [], lock: false };
 
 const KEY = 'hyodo-trip:form:v1';
 
@@ -69,7 +77,13 @@ export function loadForm(): FormState {
     // 지난 날짜는 다음 토요일로
     const today = new Date().toISOString().slice(0, 10);
     if (!f.trip?.date || f.trip.date < today) f.trip = { ...f.trip, date: DEFAULT_FORM.trip.date };
-    return { ...DEFAULT_FORM, ...f, trip: { ...DEFAULT_FORM.trip, ...f.trip }, condition: { ...DEFAULT_FORM.condition, ...f.condition } };
+    return {
+      ...DEFAULT_FORM,
+      ...f,
+      trip: { ...DEFAULT_FORM.trip, ...f.trip },
+      condition: { ...DEFAULT_FORM.condition, ...f.condition },
+      prefs: { ...DEFAULT_FORM.prefs, ...f.prefs, etc: { ...f.prefs?.etc } },
+    };
   } catch {
     return DEFAULT_FORM;
   }
@@ -86,6 +100,8 @@ export function saveForm(f: FormState) {
 /** radiusOverride: 화면 ④에서 고칠 때는 처음 결과가 실제로 쓴 반경(자동으로 넓혔을 수 있음)을 그대로 씀 */
 export function toRequest(f: FormState, adj: Adjustments, includePrefs: boolean, radiusOverride?: number): PlanRequest {
   const t = f.trip;
+  const d0 = adj.days[0] ?? {};
+  const lodging = adj.lodging ?? (t.lodging ? { name: t.lodging.name, pos: t.lodging.pos } : null);
   return {
     trip: {
       regionName: t.region!.name,
@@ -100,9 +116,12 @@ export function toRequest(f: FormState, adj: Adjustments, includePrefs: boolean,
     condition: f.condition,
     prefs: includePrefs && !f.prefsSkipped ? f.prefs : null,
     excludeIds: adj.excludeIds,
-    includeIds: adj.includeIds,
-    pinnedMeals: adj.pinnedMeals,
-    lockAttractions: adj.lock,
+    includeIds: d0.includeIds ?? [],
+    pinnedMeals: d0.pinnedMeals ?? {},
+    lockAttractions: d0.lockAttractions ?? false,
+    nights: t.nights,
+    lodging: t.nights > 0 ? lodging : null,
+    days: t.nights > 0 && adj.days.length ? adj.days : undefined,
   };
 }
 

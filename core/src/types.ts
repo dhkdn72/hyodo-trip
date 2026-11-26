@@ -6,8 +6,8 @@ export interface LatLng {
   lng: number;
 }
 
-/** attraction=관광지·문화시설, restaurant=음식점, cafe=휴식용 카페, origin=출발 장소 */
-export type PlaceKind = 'attraction' | 'restaurant' | 'cafe' | 'origin';
+/** attraction=관광지·문화시설·쇼핑, restaurant=음식점, cafe=휴식용 카페, lodging=숙소, origin=출발 장소 */
+export type PlaceKind = 'attraction' | 'restaurant' | 'cafe' | 'lodging' | 'origin';
 
 /** 데이터 출처. sample 은 API 키가 없을 때 쓰는 예시 데이터 */
 export type PlaceSource = 'tourapi' | 'kakao' | 'sample' | 'user';
@@ -45,6 +45,8 @@ export interface Place {
   /** TourAPI 법정동 코드 (lDongRegnCd 시도 2자리, lDongSignguCd 시군구 3자리) */
   lDong?: { regn: string; signgu: string };
   image?: string;
+  /** 작은 사진 (TourAPI firstimage2) */
+  thumb?: string;
   /** 음식점 대표·취급 메뉴 (detailIntro2 firstmenu/treatmenu) */
   menu?: string;
   /** 휴무일 원문 (detailIntro2 restdate…) */
@@ -65,8 +67,11 @@ export interface TripInput {
   /** HH:MM */
   startTime: string;
   endTime: string;
-  origin: { name: string; pos: LatLng };
-  /** 일정 끝에 출발 장소(숙소)로 돌아오기 */
+  /** 출발 장소. 여러 날 일정의 2일차부터는 숙소 (isLodging) */
+  origin: { name: string; pos: LatLng; isLodging?: boolean };
+  /** 일정 끝에 갈 곳. 없으면 출발 장소 (여러 날 일정에서는 숙소) */
+  endPlace?: { name: string; pos: LatLng; isLodging?: boolean };
+  /** 일정 끝에 endPlace(없으면 출발 장소)로 가기 */
   returnToOrigin: boolean;
   /** 후보 검색 반경(m). 기본 3000. 후보가 모자라면 서버가 넓힐 수 있음 */
   radiusM?: number;
@@ -95,6 +100,8 @@ export interface PrefInput {
   foods: string[];
   interests: string[];
   activities: string[];
+  /** 목록에 없는 항목 — 그룹별 '기타' 직접 입력 (쉼표로 여러 개) */
+  etc?: { foods?: string; interests?: string; activities?: string };
   /** "시끄러운 곳은 싫어하세요" 같은 자유 입력 */
   freeText?: string;
 }
@@ -102,8 +109,11 @@ export interface PrefInput {
 /** 자유 입력을 조건으로 바꾼 결과 (LLM 또는 규칙) */
 export interface FreeTextRule {
   avoid: string[];
+  /** 관광지 이름에 있으면 가산점 */
   prefer: string[];
   avoidFood: string[];
+  /** 음식점 이름·메뉴에 있으면 가산점 */
+  preferFood?: string[];
   source: 'llm' | 'rule';
   /** 화면에 보여 줄 해석 문장 */
   summary: string;
@@ -121,6 +131,59 @@ export interface PlanRequest {
   pinnedMeals?: { lunch?: string; dinner?: string };
   /** true 면 관광지를 includeIds 그대로 쓰고 더하거나 빼지 않음 (화면 ④에서 손으로 고친 뒤) */
   lockAttractions?: boolean;
+  /** 여행 기간: 0 당일치기, 1 = 1박 2일, 2 = 2박 3일 */
+  nights?: number;
+  /** 숙소. 없으면 지역 안에서 추천. recommended=true 는 추천받은 숙소를 그대로 유지할 때 */
+  lodging?: { name: string; pos: LatLng; id?: string; recommended?: boolean } | null;
+  /** 여러 날 일정에서 날짜별로 손으로 고친 내용 (days[0] = 1일차) */
+  days?: DayAdjust[];
+}
+
+export interface DayAdjust {
+  includeIds?: string[];
+  pinnedMeals?: { lunch?: string; dinner?: string };
+  lockAttractions?: boolean;
+}
+
+/** 당일·여러 날 일정 결과 (/api/plan 응답) */
+export interface TripPlan {
+  title: string;
+  nights: number;
+  days: PlanResult[];
+  /** 여러 날 일정의 숙소 */
+  lodging: Place | null;
+  lodgingSource: 'recommended' | 'user' | 'none';
+  /** 숙소 '바꾸기' 후보 */
+  lodgingAlternatives: Place[];
+  /** 모든 날짜에 쓴 반경 중 가장 큰 값 (고칠 때 그대로 씀) */
+  radiusM: number;
+  warnings: string[];
+}
+
+/** 장소 상세를 찾을 때 쓰는 최소 정보 */
+export interface PlaceRef {
+  id: string;
+  name: string;
+  pos: LatLng;
+  contentTypeId?: string;
+  kind?: PlaceKind;
+  addr?: string;
+}
+
+/** 장소 상세 (/api/place 응답) */
+export interface PlaceDetail {
+  id: string;
+  images: string[];
+  overview?: string;
+  tel?: string;
+  homepage?: string;
+  /** 이용시간·쉬는 날·메뉴·체크인 같은 항목 */
+  info: { label: string; value: string }[];
+  /** 카카오맵 장소 페이지(메뉴·가격·사진·리뷰) 또는 지도 링크 */
+  kakaoUrl: string;
+  kakaoUrlKind: 'place' | 'map';
+  nearby: { name: string; distance: number; category?: string; url?: string }[];
+  source: 'tourapi' | 'kakao' | 'sample';
 }
 
 // ───────── 이동 ─────────
@@ -226,8 +289,8 @@ export interface ExplainContext {
 }
 
 export interface Providers {
-  /** 1 후보 수집 */
-  searchPlaces(center: LatLng, radiusM: number, kind: 'attraction' | 'restaurant'): Promise<Place[]>;
+  /** 1 후보 수집 (shopping = 시장·백화점 등 쇼핑 장소, attraction 으로 돌려줌) */
+  searchPlaces(center: LatLng, radiusM: number, kind: 'attraction' | 'restaurant' | 'lodging' | 'shopping'): Promise<Place[]>;
   /** 2 접근성 정보 붙이기 (places 를 직접 수정) */
   attachAccessibility(places: Place[]): Promise<void>;
   /** 음식점 메뉴·휴무일 같은 상세 정보 (선택) */
@@ -238,6 +301,8 @@ export interface Providers {
   drive(a: LatLng, b: LatLng): Promise<RawRoute>;
   /** 5 휴식용 카페 */
   nearbyCafes(p: LatLng, radiusM: number): Promise<Place[]>;
+  /** 장소 상세 — 사진·소개·이용시간·메뉴·근처 관광지 (화면 ④ 장소 누르기) */
+  placeDetail?(ref: PlaceRef): Promise<PlaceDetail>;
   /** 6 설명 (실패하면 null → 템플릿) */
   explain?(ctx: ExplainContext): Promise<string | null>;
   /** 자유 입력 → 조건 (실패하면 null → 규칙) */

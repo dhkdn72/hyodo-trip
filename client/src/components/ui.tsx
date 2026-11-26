@@ -65,14 +65,29 @@ export function Segmented<T extends string | number>({
   );
 }
 
-export function Chips({ options, selected, onToggle, label }: { options: readonly string[]; selected: string[]; onToggle: (v: string) => void; label: string }) {
+/** bare: 감싸는 div 없이 칩만 (다른 칩과 한 줄에 이어 붙일 때) */
+export function Chips({
+  options,
+  selected,
+  onToggle,
+  label,
+  bare,
+}: {
+  options: readonly string[];
+  selected: string[];
+  onToggle: (v: string) => void;
+  label: string;
+  bare?: boolean;
+}) {
+  const chips = options.map((o) => (
+    <button key={o} type="button" className="chip" aria-pressed={selected.includes(o)} onClick={() => onToggle(o)}>
+      {o}
+    </button>
+  ));
+  if (bare) return <>{chips}</>;
   return (
     <div className="chips" role="group" aria-label={label}>
-      {options.map((o) => (
-        <button key={o} type="button" className="chip" aria-pressed={selected.includes(o)} onClick={() => onToggle(o)}>
-          {o}
-        </button>
-      ))}
+      {chips}
     </div>
   );
 }

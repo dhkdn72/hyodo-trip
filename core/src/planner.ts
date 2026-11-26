@@ -6,7 +6,17 @@ import { PLAN_DEFAULTS, type PlanDefaults } from './config.ts';
 import { buildExplainContext, explanationIsGrounded } from './explain.ts';
 import { centroid, haversine, parseDate, toMin } from './geo.ts';
 import { optimizeOrder, type OptimizeResult } from './optimize.ts';
-import { categoryCheck, prefScore, ruleFreeText, wantsRelaxed } from './prefs.ts';
+import {
+  categoryCheck,
+  isPerformanceHall,
+  marketClosedOn,
+  normalizePrefs,
+  prefScore,
+  ruleFreeText,
+  wantsFoodie,
+  wantsRelaxed,
+  wantsShopping,
+} from './prefs.ts';
 import { runTimeline, type SeqNode, type TimelineCtx } from './schedule.ts';
 import { TravelMatrix } from './travel.ts';
 import type {
@@ -30,6 +40,10 @@ export class PlanError extends Error {
 
 export interface PlanOptions {
   defaults?: Partial<PlanDefaults>;
+  /** 여러 날 일정: 다른 날에 이미 쓴 장소 (같은 곳·가까운 같은 이름도 뺌) */
+  avoidPlaces?: Place[];
+  /** 여러 날 일정: 먼저 정한 날짜에서 쓴 휴식 카페 */
+  usedCafeIds?: Set<string>;
 }
 
 const CAFE_NAME = /(카페|커피|cafe|coffee|베이커리|디저트|찻집|티하우스|빙수)/i;
@@ -83,7 +97,23 @@ export function sameSpot(a: Place, b: Place): boolean {
   if (d > 600) return false;
   const x = normName(a.name);
   const y = normName(b.name);
-  return x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x));
+  if (x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x))) return true;
+  return sharedLandmark(x, y);
+}
+
+/**
+ * 두 이름이 같은 궁·절·성당·능 이름(3글자 이상)을 품고 있는지
+ *  덕수궁 돌담길 ↔ 덕수궁 대한문 ↔ 국립현대미술관 덕수궁 → '덕수궁' 공유 → 같은 곳
+ *  서울시립미술관 ↔ 서울시청 → '서울시'는 궁·절 이름이 아니라 다른 곳
+ */
+function sharedLandmark(x: string, y: string): boolean {
+  for (let len = 6; len >= 3; len--) {
+    for (let i = 0; i + len <= x.length; i++) {
+      const sub = x.slice(i, i + len);
+      if (/[궁사당릉묘궐]$/.test(sub) && /^[가-힣]+$/.test(sub) && y.includes(sub)) return true;
+    }
+  }
+  return false;
 }
 
 function regionShort(name: string) {
@@ -94,7 +124,9 @@ function regionShort(name: string) {
 export async function planTrip(req: PlanRequest, providers: Providers, opts: PlanOptions = {}): Promise<PlanResult> {
   const d: PlanDefaults = { ...PLAN_DEFAULTS, ...opts.defaults };
   const { trip, condition: cond } = req;
-  const prefs = req.prefs ?? null;
+  const prefs = normalizePrefs(req.prefs);
+  const avoid = opts.avoidPlaces ?? [];
+  const avoided = (p: Place) => avoid.some((a) => a.id === p.id || (p.kind !== 'restaurant' && sameSpot(a, p)));
   const exclude = new Set(req.excludeIds ?? []);
   const include = new Set(req.includeIds ?? []);
   const pinned = req.pinnedMeals ?? {};
@@ -119,20 +151,27 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
   const baseScore = (p: Place, r: number) => {
     const dist = haversine(trip.center, p.pos);
     p.distFromCenter = Math.round(dist);
-    return 1 - 0.3 * Math.min(1, dist / r) + (p.image ? 0.1 : 0) + categoryCheck(p).bonus;
+    return 1 - 0.3 * Math.min(1, dist / r) + (p.image ? 0.1 : 0) + categoryCheck(p, prefs).bonus;
   };
 
   /** 1 후보 수집 + 2 접근성 필터를 반경 r 로 한 번 수행 */
   const collect = async (r: number) => {
     const t1 = timer();
-    const [attrRaw, restRaw] = await Promise.all([
+    const [attrMain, restRaw, shopRaw] = await Promise.all([
       providers.searchPlaces(trip.center, r, 'attraction'),
       providers.searchPlaces(trip.center, r, 'restaurant'),
+      // 시장·쇼핑을 골랐을 때만 쇼핑(38) 장소도 받음
+      wantsShopping(prefs) ? providers.searchPlaces(trip.center, r, 'shopping').catch(() => [] as Place[]) : Promise.resolve([] as Place[]),
     ]);
-    // 교통시설·주점·카페처럼 맞지 않는 분류는 처음부터 뺌 (사용자가 직접 넣은 곳은 유지)
-    const allAttr = dedupe(attrRaw).filter((p) => include.has(p.id) || (!exclude.has(p.id) && !categoryCheck(p).excluded));
+    const attrRaw = [...attrMain, ...shopRaw.map((p) => ({ ...p, kind: 'attraction' as const }))];
+    // 교통시설·주점·카페처럼 맞지 않는 분류, 다른 날에 이미 간 곳은 처음부터 뺌 (사용자가 직접 넣은 곳은 유지)
+    const allAttr = dedupe(attrRaw).filter(
+      (p) => include.has(p.id) || (!exclude.has(p.id) && !avoided(p) && !categoryCheck(p, prefs).excluded),
+    );
     const allRest = dedupe(restRaw).filter(
-      (p) => pinnedIds.includes(p.id) || (!exclude.has(p.id) && !CAFE_NAME.test(p.name) && !categoryCheck(p).excluded),
+      (p) =>
+        pinnedIds.includes(p.id) ||
+        (!exclude.has(p.id) && !avoided(p) && !CAFE_NAME.test(p.name) && !categoryCheck(p, prefs).excluded),
     );
     const searchMs = t1();
 
@@ -155,6 +194,7 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     let accessExcluded = 0;
     let prefExcluded = 0;
     const closedNames: string[] = [];
+    const marketClosed: string[] = [];
     const notes: string[] = [];
     const finalScore = (list: Place[]): Scored[] => {
       const out: Scored[] = [];
@@ -177,6 +217,13 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
           }
           notes.push(`${p.name}은(는) ${weekday}요일 휴무로 안내돼 있어요. 방문 전에 꼭 확인해 주세요.`);
         }
+        if (marketClosedOn(p.name, trip.date)) {
+          if (!forced) {
+            marketClosed.push(p.name);
+            continue;
+          }
+          notes.push(`${p.name}은(는) 장날이 아닌 날이라 열지 않을 수 있어요.`);
+        }
         out.push({ place: p, score: baseScore(p, r) + ps.bonus + acc.bonus, matched: ps.matched });
       }
       return out.sort((a, b) => b.score - a.score);
@@ -192,6 +239,7 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
       accessExcluded,
       prefExcluded,
       closedNames,
+      marketClosed,
       notes,
       searchMs,
       accessMs: t2(),
@@ -227,6 +275,9 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
   if (closedNames.length) {
     warnings.push(`${closedNames.slice(0, 3).join(', ')}${closedNames.length > 3 ? ' 등' : ''}은(는) ${weekday}요일 휴무라 뺐어요.`);
   }
+  if (col.marketClosed.length) {
+    warnings.push(`${col.marketClosed.slice(0, 2).join(', ')}${col.marketClosed.length > 2 ? ' 등' : ''}은(는) 이날이 장날이 아니라 뺐어요.`);
+  }
   pipeline.push({
     key: 'access',
     label: '접근성 필터',
@@ -242,12 +293,22 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
   }
 
   // ───── 3·4 이동 시간 계산 + 순서 최적화 ─────
-  const origin: Place = { id: 'origin', source: 'user', kind: 'origin', name: trip.origin.name, pos: trip.origin.pos };
+  const origin: Place = {
+    id: 'origin',
+    source: 'user',
+    kind: trip.origin.isLodging ? 'lodging' : 'origin',
+    name: trip.origin.name,
+    pos: trip.origin.pos,
+  };
+  const endPlace: Place = trip.endPlace
+    ? { id: 'end', source: 'user', kind: trip.endPlace.isLodging ? 'lodging' : 'origin', name: trip.endPlace.name, pos: trip.endPlace.pos }
+    : origin;
   const matrix = new TravelMatrix(providers, cond, d);
   const relaxed = wantsRelaxed(prefs);
   const restMin = relaxed ? d.restMinRelaxed : d.restMin;
   const ctx: TimelineCtx = {
     origin,
+    endPlace,
     start,
     end,
     returnToOrigin: trip.returnToOrigin,
@@ -284,7 +345,11 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     const fresh = s.matched.some((m) => prefs?.interests.includes(m) && !covered.has(m)) ? 0.5 : 0;
     // 이미 채운 관심사를 또 채우는 곳은 가산점을 대부분 덜어 냄 (궁궐 두 곳보다 가까운 다른 곳)
     const repeat = s.matched.filter((m) => prefs?.interests.includes(m) && covered.has(m)).length * 0.6;
-    return s.score + fresh - repeat - (0.35 * haversine(c, s.place.pos)) / 1000 - (0.1 * haversine(origin.pos, s.place.pos)) / 1000;
+    // 같은 중분류(시장·시장, 고궁·고궁 …)가 하루에 겹치면 덜 고름
+    const cat = s.place.lcls?.[1];
+    const sameCat = cat ? around.filter((p) => p.lcls?.[1] === cat).length * 0.4 : 0;
+    const home = endPlace === origin ? 0.1 * haversine(origin.pos, s.place.pos) : 0.05 * (haversine(origin.pos, s.place.pos) + haversine(endPlace.pos, s.place.pos));
+    return s.score + fresh - repeat - sameCat - (0.35 * haversine(c, s.place.pos)) / 1000 - home / 1000;
   };
   const nextNear = (selection: Place[]): Scored | null => {
     const pool = attrCands.filter((s) => !selection.some((p) => p.id === s.place.id || sameSpot(p, s.place)));
@@ -305,6 +370,7 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
   let optimizeMs = 0;
   let evaluated = 0;
   const restScore = new Map(restCands.map((s) => [s.place.id, s]));
+  const foodie = wantsFoodie(prefs);
 
   const solve = async (sel: Place[]) => {
     const c = sel.length ? centroid(sel.map((p) => p.pos)) : trip.center;
@@ -316,19 +382,22 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
         used.add(pin.place.id);
         return [pin.place];
       }
+      // 맛집 탐방을 고르면 거리 감점을 절반으로 (조금 멀어도 잘 알려진 식당)
+      const perKm = foodie ? 0.3 : 0.6;
       const ranked = restCands
         .filter((s) => !used.has(s.place.id) && !Object.values(pinned).includes(s.place.id))
-        .map((s) => ({ s, v: s.score - (0.6 * haversine(c, s.place.pos)) / 1000, d: haversine(c, s.place.pos) }))
+        .map((s) => ({ s, v: s.score - (perKm * haversine(c, s.place.pos)) / 1000, d: haversine(c, s.place.pos) }))
         .sort((a, b) => b.v - a.v);
-      // 고른 음식에 맞는 식당이 1.5km 안에 있으면 그 중에서만 고름
-      const liked = prefs?.foods.length ? ranked.filter((x) => x.s.matched.some((m) => prefs.foods.includes(m)) && x.d <= 1500) : [];
+      // 고른 음식에 맞는 식당이 1.5km(맛집 탐방이면 2.5km) 안에 있으면 그 중에서만 고름
+      const likedKm = foodie ? 2500 : 1500;
+      const liked = prefs?.foods.length ? ranked.filter((x) => x.s.matched.some((m) => prefs.foods.includes(m)) && x.d <= likedKm) : [];
       const opts = (liked.length ? liked : ranked).slice(0, d.restaurantOptions).map((x) => x.s.place);
       opts.forEach((p) => used.add(p.id));
       return opts;
     });
 
     const tTravel = timer();
-    await matrix.prefetch([origin, ...sel, ...mealOptions.flat()]);
+    await matrix.prefetch([origin, ...(endPlace !== origin ? [endPlace] : []), ...sel, ...mealOptions.flat()]);
     travelMs += tTravel();
 
     const tOpt = timer();
@@ -399,7 +468,7 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
 
   // ───── 5 쉬는 곳 채우기 ─────
   let stopT = timer();
-  const usedCafes = new Set<string>();
+  const usedCafes = opts.usedCafeIds ?? new Set<string>();
   let cafesFound = 0;
   const finalSeq: SeqNode[] = [];
   for (const node of best.timeline.seq) {
@@ -425,7 +494,7 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
         prev = n.place;
       }
     }
-    if (trip.returnToOrigin) await matrix.leg(prev, origin);
+    if (trip.returnToOrigin) await matrix.leg(prev, endPlace);
   }
   const finalTl = runTimeline(finalSeq, ctx, false);
   const restCount = finalTl.restCount;
@@ -456,6 +525,19 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     if (cond.needs.parking) say('주차', placesInPlan.filter((p) => accessStatus(p, 'parking') === 'unknown').map((p) => p.name));
   }
   if (meals.length && !best.restaurants.length) warnings.push('근처에서 조건에 맞는 식당을 찾지 못해 식사를 넣지 못했어요.');
+  {
+    const halls = stops.filter((s) => s.type === 'visit' && isPerformanceHall(s.place)).map((s) => s.place.name);
+    if (halls.length) {
+      warnings.push(`${halls.join(', ')}: 일정표 시간은 60분 둘러보기 기준이에요. 공연 시간표를 확인해 시간을 맞춰 주세요.`);
+    }
+    // '기타'로 적은 말에 맞는 곳이 반경 안에 하나도 없으면 알려 줌
+    const custom = prefs?.custom ?? [];
+    const allMatched = new Set([...attrCands, ...restCands].flatMap((x) => x.matched));
+    const missing = custom.filter((k) => !allMatched.has(k));
+    if (missing.length) {
+      warnings.push(`기타로 적은 '${missing.join("', '")}'에 맞는 곳을 반경 ${km(radius)} 안에서 찾지 못했어요.`);
+    }
+  }
 
   // ───── 6 설명 붙이기 ─────
   stopT = timer();

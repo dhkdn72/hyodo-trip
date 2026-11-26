@@ -62,7 +62,7 @@ export async function llmFreeText(text: string): Promise<FreeTextRule | null> {
   try {
     const j = JSON.parse(m[0]);
     const arr = (x: unknown) => (Array.isArray(x) ? x.filter((s) => typeof s === 'string' && s.trim()).slice(0, 8) : []);
-    return { avoid: arr(j.avoid), prefer: arr(j.prefer), avoidFood: arr(j.avoidFood), summary: String(j.summary ?? ''), source: 'llm' };
+    return { avoid: arr(j.avoid), prefer: arr(j.prefer), avoidFood: arr(j.avoidFood), preferFood: arr(j.preferFood), summary: String(j.summary ?? ''), source: 'llm' };
   } catch {
     return null;
   }

@@ -851,3 +851,235 @@ details.pipe summary {
   overflow: hidden;
   clip: rect(0 0 0 0);
 }
+
+/* ───── 취향 '기타' 직접 입력 ───── */
+.etc-row {
+  margin-top: 8px;
+}
+.etc-input {
+  width: 100%;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 15.5px;
+  background: var(--surface);
+}
+.etc-input:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+/* ───── 숙소 (여러 날 일정) ───── */
+.lodging-field {
+  padding: 0;
+}
+.lodging-field .field-main {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 11px 14px 12px;
+}
+.lodging-field .btn.text {
+  width: auto;
+  margin: -6px 0 6px 6px;
+}
+.btn.text.small,
+.btn.small {
+  font-size: 13.5px;
+  padding: 4px 6px;
+  width: auto;
+}
+.day-tabs {
+  margin-top: 0;
+}
+.day-tabs button small {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.85;
+}
+.lodging-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.lodging-card .lc-main {
+  flex: 1;
+  min-width: 0;
+}
+.lodging-card .lc-name {
+  font-size: 17px;
+  font-weight: 700;
+}
+.lodging-card .lc-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lodging-card .lc-actions .btn {
+  padding: 7px 12px;
+  font-size: 14px;
+  width: auto;
+}
+.lc-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex: none;
+  background: #eef1f2;
+}
+
+/* ───── 타임라인 사진 ───── */
+.tl-body {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.tl-text {
+  flex: 1;
+  min-width: 0;
+}
+.tl-thumb {
+  width: 58px;
+  height: 58px;
+  border-radius: 9px;
+  object-fit: cover;
+  flex: none;
+  background: #eef1f2;
+}
+
+/* ───── 장소 상세 ───── */
+.pd {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pd-photos {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  margin: 0 -18px;
+  padding: 0 18px 2px;
+}
+.pd-photos img {
+  height: 170px;
+  width: auto;
+  max-width: 82%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 12px;
+  scroll-snap-align: start;
+  flex: none;
+  background: #eef1f2;
+}
+.pd-credit {
+  margin: -4px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.pd-access {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.pd-loading {
+  font-size: 14px;
+}
+.pd-overview p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  white-space: pre-line;
+}
+.pd-overview p.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pd-overview .btn.text {
+  padding-left: 0;
+}
+.pd-info {
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+.pd-info > div {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14.5px;
+}
+.pd-info dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+.pd-info dd {
+  margin: 0;
+  white-space: pre-line;
+  word-break: break-word;
+}
+.pd-info a,
+.pd-nearby a {
+  color: var(--primary);
+}
+.pd-kakao {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  padding: 12px 16px;
+  font-size: 15.5px;
+}
+.pd-nearby ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.pd-nearby li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+  font-weight: 600;
+}
+.pd-nearby small {
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ───── 여러 날 일정표 ───── */
+.share-day + .share-day {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 2px dashed var(--cream-line);
+}
+.share-day-head {
+  font-size: 21px;
+  font-weight: 800;
+  color: #6b604a;
+  margin: 0 0 10px;
+}
+.share-lodging {
+  font-size: 19px;
+  font-weight: 700;
+  margin: -8px 0 16px;
+  color: #5e5442;
+}
+.share-card.compact .share-rows {
+  gap: 8px;
+}
+.share-card.compact .share-rows li {
+  font-size: 20px;
+  grid-template-columns: 74px 1fr;
+}

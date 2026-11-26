@@ -1,3 +1,5 @@
+import type { PlaceRef } from '@hyodo/core';
+
 // /api/plan 입력 검사 (의존성 없이 최소한으로)
 
 const isNum = (x: unknown) => typeof x === 'number' && Number.isFinite(x);
@@ -29,13 +31,48 @@ export function validatePlanRequest(b: any): string | null {
       if (!Array.isArray(p[k]) || p[k].some((s: unknown) => typeof s !== 'string')) return '취향 값이 잘못됐어요.';
     }
     if (p.freeText !== undefined && (typeof p.freeText !== 'string' || p.freeText.length > 300)) return '자유 입력은 300자까지예요.';
+    if (p.etc !== undefined) {
+      if (!p.etc || typeof p.etc !== 'object') return '기타 입력이 잘못됐어요.';
+      for (const k of ['foods', 'interests', 'activities']) {
+        const v = p.etc[k];
+        if (v !== undefined && (typeof v !== 'string' || v.length > 60)) return '기타 입력은 60자까지예요.';
+      }
+    }
+  }
+  if (b.nights !== undefined && !(Number.isInteger(b.nights) && b.nights >= 0 && b.nights <= 2)) return '여행 기간이 잘못됐어요.';
+  if (b.lodging !== undefined && b.lodging !== null) {
+    const l = b.lodging;
+    if (typeof l.name !== 'string' || l.name.length > 80 || !isLatLng(l.pos)) return '숙소 정보가 잘못됐어요.';
+    if (l.id !== undefined && typeof l.id !== 'string') return '숙소 정보가 잘못됐어요.';
+    if (l.recommended !== undefined && typeof l.recommended !== 'boolean') return '숙소 정보가 잘못됐어요.';
+  }
+  if (b.days !== undefined) {
+    if (!Array.isArray(b.days) || b.days.length > 3) return '날짜별 값이 잘못됐어요.';
+    for (const dy of b.days) {
+      if (!dy || typeof dy !== 'object') return '날짜별 값이 잘못됐어요.';
+      if (!isIdList(dy.includeIds)) return '장소 목록이 잘못됐어요.';
+      if (dy.lockAttractions !== undefined && typeof dy.lockAttractions !== 'boolean') return 'lockAttractions 값이 잘못됐어요.';
+      if (dy.pinnedMeals !== undefined && !isPinned(dy.pinnedMeals)) return '고정한 식당 값이 잘못됐어요.';
+    }
   }
   if (!isIdList(b.excludeIds) || !isIdList(b.includeIds)) return '장소 목록이 잘못됐어요.';
   if (b.lockAttractions !== undefined && typeof b.lockAttractions !== 'boolean') return 'lockAttractions 값이 잘못됐어요.';
-  if (b.pinnedMeals !== undefined) {
-    const m = b.pinnedMeals;
-    if (!m || typeof m !== 'object' || Object.entries(m).some(([k, v]) => !['lunch', 'dinner'].includes(k) || typeof v !== 'string'))
-      return '고정한 식당 값이 잘못됐어요.';
-  }
+  if (b.pinnedMeals !== undefined && !isPinned(b.pinnedMeals)) return '고정한 식당 값이 잘못됐어요.';
   return null;
+}
+
+function isPinned(m: any) {
+  return !!m && typeof m === 'object' && !Object.entries(m).some(([k, v]) => !['lunch', 'dinner'].includes(k) || typeof v !== 'string');
+}
+
+/** /api/place 쿼리 → PlaceRef (id·name·lat·lng 필수) */
+export function parsePlaceRef(q: any): PlaceRef | null {
+  const id = typeof q.id === 'string' ? q.id.slice(0, 80) : '';
+  const name = typeof q.name === 'string' ? q.name.trim().slice(0, 80) : '';
+  const lat = Number(q.lat);
+  const lng = Number(q.lng);
+  if (!/^(tour|kakao|sample|user):[\w.-]+$/.test(id) || !name || !isLatLng({ lat, lng })) return null;
+  const type = typeof q.type === 'string' && /^\d{2}$/.test(q.type) ? q.type : undefined;
+  const addr = typeof q.addr === 'string' ? q.addr.slice(0, 120) : undefined;
+  return { id, name, pos: { lat, lng }, contentTypeId: type, addr };
 }

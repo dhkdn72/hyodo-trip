@@ -12,7 +12,7 @@ export function PlaceSearchSheet({
   sampleNote,
 }: {
   open: boolean;
-  kind: 'region' | 'origin';
+  kind: 'region' | 'origin' | 'lodging';
   onClose: () => void;
   onPick: (v: { name: string; pos: LatLng }) => void;
   sampleNote?: string | null;
@@ -28,7 +28,7 @@ export function PlaceSearchSheet({
     setBusy(true);
     setErr(null);
     try {
-      const r = await geoSearch(query, kind);
+      const r = await geoSearch(query, kind === 'region' ? 'region' : 'origin');
       setResults(r.results);
       setSource(r.source);
       if (!r.results.length && query) setErr('검색 결과가 없어요. 다른 이름이나 주소로 찾아 보세요.');
@@ -50,7 +50,7 @@ export function PlaceSearchSheet({
   }, [open, kind]);
 
   return (
-    <Sheet open={open} onClose={onClose} title={kind === 'region' ? '어느 지역으로 가세요?' : '어디서 출발하세요?'}>
+    <Sheet open={open} onClose={onClose} title={kind === 'region' ? '어느 지역으로 가세요?' : kind === 'lodging' ? '어디서 묵으세요?' : '어디서 출발하세요?'}>
       <form
         className="sheet-search"
         onSubmit={(e) => {
@@ -62,7 +62,7 @@ export function PlaceSearchSheet({
           ref={inputRef}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder={kind === 'region' ? '예: 명동, 경복궁, 전주 한옥마을' : '숙소 이름이나 주소 (예: 서울역)'}
+          placeholder={kind === 'region' ? '예: 명동, 경복궁, 전주 한옥마을' : kind === 'lodging' ? '숙소 이름이나 주소' : '숙소 이름이나 주소 (예: 서울역)'}
           aria-label="검색어"
         />
         <button type="submit" disabled={busy}>

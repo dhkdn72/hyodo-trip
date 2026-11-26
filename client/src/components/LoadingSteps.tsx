@@ -18,7 +18,7 @@ export function LoadingSteps() {
   }, []);
   return (
     <div className="loading" aria-live="polite">
-      <h2>부모님께 맞는 하루를 짜고 있어요</h2>
+      <h2>부모님께 맞는 일정을 짜고 있어요</h2>
       <ol className="load-steps">
         {STEPS.map((s, k) => (
           <li key={s.label} className={k < i ? 'done' : k === i ? 'doing' : ''}>

@@ -2,8 +2,38 @@
 
 import { haversine } from '../geo.ts';
 import { estimateDrive, estimateWalk } from '../travel.ts';
-import type { GeoResult, LatLng, Place, Providers } from '../types.ts';
-import { SAMPLE_ATTRACTIONS, SAMPLE_CAFES, SAMPLE_GAZETTEER, SAMPLE_RESTAURANTS } from './data.ts';
+import type { GeoResult, LatLng, Place, PlaceDetail, PlaceRef, Providers } from '../types.ts';
+import { SAMPLE_ATTRACTIONS, SAMPLE_CAFES, SAMPLE_GAZETTEER, SAMPLE_LODGINGS, SAMPLE_RESTAURANTS, SAMPLE_SHOPPING } from './data.ts';
+
+const ALL = () => [...SAMPLE_ATTRACTIONS, ...SAMPLE_SHOPPING, ...SAMPLE_RESTAURANTS, ...SAMPLE_LODGINGS, ...SAMPLE_CAFES];
+
+/** 예시 데이터의 장소 상세: 이름·좌표로 만든 카카오맵 링크와 근처 예시 장소만 */
+export function sampleDetail(ref: PlaceRef): PlaceDetail {
+  const p = ALL().find((x) => x.id === ref.id);
+  const info: PlaceDetail['info'] = [];
+  if (p?.menu) info.push({ label: '메뉴 (예시)', value: p.menu });
+  if (p?.restDate) info.push({ label: '쉬는 날', value: p.restDate });
+  const nearby = [...SAMPLE_ATTRACTIONS, ...SAMPLE_SHOPPING]
+    .filter((x) => x.id !== ref.id)
+    .map((x) => ({ name: x.name, distance: Math.round(haversine(ref.pos, x.pos)) }))
+    .filter((x) => x.distance <= 700)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 5);
+  return {
+    id: ref.id,
+    images: p?.image ? [p.image] : [],
+    info,
+    kakaoUrl: kakaoMapLink(ref.name, ref.pos),
+    kakaoUrlKind: 'map',
+    nearby,
+    source: 'sample',
+  };
+}
+
+/** 카카오맵 지도 링크 (장소 페이지를 못 찾았을 때) */
+export function kakaoMapLink(name: string, pos: LatLng) {
+  return `https://map.kakao.com/link/map/${encodeURIComponent(name.replace(/,/g, ' '))},${pos.lat},${pos.lng}`;
+}
 
 const clone = (p: Place): Place => JSON.parse(JSON.stringify(p));
 
@@ -13,7 +43,14 @@ export function createSampleProviders(opts: { latencyMs?: number } = {}): Provid
     sources: { places: 'sample', access: 'sample', walk: 'estimate', taxi: 'estimate', cafes: 'sample' },
     async searchPlaces(center: LatLng, radiusM: number, kind) {
       await wait();
-      const list = kind === 'attraction' ? SAMPLE_ATTRACTIONS : SAMPLE_RESTAURANTS;
+      const list =
+        kind === 'attraction'
+          ? SAMPLE_ATTRACTIONS
+          : kind === 'shopping'
+            ? SAMPLE_SHOPPING
+            : kind === 'lodging'
+              ? SAMPLE_LODGINGS
+              : SAMPLE_RESTAURANTS;
       return list
         .filter((p) => haversine(center, p.pos) <= radiusM)
         .map(clone)
@@ -27,6 +64,10 @@ export function createSampleProviders(opts: { latencyMs?: number } = {}): Provid
     },
     async drive(a, b) {
       return estimateDrive(a, b);
+    },
+    async placeDetail(ref) {
+      await wait();
+      return sampleDetail(ref);
     },
     async nearbyCafes(p, radiusM) {
       await wait();

@@ -74,9 +74,10 @@ export const EXPLAIN_SYSTEM_PROMPT = `너는 부모님과 여행하는 자녀에
 - 문장만 출력해. 따옴표·머리말 없이.`;
 
 export const FREETEXT_SYSTEM_PROMPT = `부모님 여행 취향에 대한 자유 입력을 장소 필터 조건으로 바꿔.
-JSON 하나만 출력해: {"avoid": string[], "prefer": string[], "avoidFood": string[], "summary": string}
+JSON 하나만 출력해: {"avoid": string[], "prefer": string[], "avoidFood": string[], "preferFood": string[], "summary": string}
 - avoid: 피해야 할 관광지 이름 키워드 (예: "시장", "타워"). 붐비는 곳을 싫어하면 "#crowded" 도 넣어.
 - prefer: 선호하는 관광지 이름 키워드 (예: "공원", "미술관", "한옥").
 - avoidFood: 피해야 할 음식점 이름·메뉴 키워드 (예: "매운", "회").
+- preferFood: 선호하는 음식점 이름·메뉴 키워드 (예: "국밥", "생선").
 - summary: 해석한 조건을 해요체 한 문장으로.
 키워드는 한국어 명사 1~3글자 위주로, 각 배열 최대 8개.`;

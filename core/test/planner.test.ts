@@ -235,6 +235,16 @@ describe('화면 ④ 손으로 고치기', () => {
 });
 
 describe('중복 장소', () => {
+  it('같은 궁 이름을 품은 가까운 곳은 같은 곳 (덕수궁 돌담길 ↔ 대한문 ↔ 미술관 덕수궁)', () => {
+    const at = (name: string, lat: number, lng: number): Place => ({ id: name, source: 'tourapi', kind: 'attraction', name, pos: { lat, lng } });
+    const wall = at('덕수궁 돌담길', 37.5651, 126.9745);
+    const gate = at('덕수궁 대한문', 37.5658, 126.9768);
+    const mmca = at('국립현대미술관 덕수궁', 37.5659, 126.9748);
+    expect(sameSpot(wall, gate)).toBe(true);
+    expect(sameSpot(mmca, gate)).toBe(true);
+    expect(sameSpot(at('서울시립미술관', 37.5641, 126.9737), at('서울시청', 37.5663, 126.9779))).toBe(false);
+  });
+
   const P = (name: string, lat: number, lng: number): Place => ({ id: name, source: 'tourapi', kind: 'attraction', name, pos: { lat, lng } });
   it('덕수궁과 덕수궁 대한문(같은 좌표)은 같은 곳으로 본다', () => {
     expect(sameSpot(P('덕수궁', 37.5650549194, 126.9765746344), P('덕수궁 대한문', 37.5650549194, 126.9765746344))).toBe(true);

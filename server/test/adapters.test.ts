@@ -44,7 +44,7 @@ describe('TourAPI KorService2', () => {
     const list = await tourSearch({ lat: 37.57, lng: 126.98 }, 3000, 'attraction');
     // 중심에서 가까운 순
     expect(list.map((p) => p.name)).toEqual(['미술관', '경복궁']);
-    expect(list[1]).toMatchObject({ id: 'tour:126508', pos: { lat: 37.5796, lng: 126.977 }, contentTypeId: '12', image: 'http://img' });
+    expect(list[1]).toMatchObject({ id: 'tour:126508', pos: { lat: 37.5796, lng: 126.977 }, contentTypeId: '12', image: 'https://img' });
     const tourCall = calls.find((c) => c.url.includes('contentTypeId=12'))!;
     expect(tourCall.url).toContain('serviceKey=TEST%2BKEY%2F%3D%3D&');
     expect(tourCall.url).toContain('mapX=126.98');
@@ -154,5 +154,82 @@ describe('카카오', () => {
     const r = await kakaoCafes({ lat: 37.56, lng: 126.97 }, 350);
     expect(r[0]).toMatchObject({ id: 'kakao:9', kind: 'cafe', pos: { lat: 37.56, lng: 126.97 } });
     expect(calls[0].url).toContain('category_group_code=CE7');
+  });
+});
+
+describe('장소 상세 (TourAPI 상세 + 카카오)', () => {
+  it('detailCommon2·detailImage2·detailIntro2(음식점)와 카카오 장소 링크·근처 명소를 합친다', async () => {
+    const { placeDetail } = await import('../src/providers/placeDetail.ts');
+    handler = (url) => {
+      if (url.includes('/detailCommon2'))
+        return {
+          body: okTour({
+            contentid: '232229',
+            contenttypeid: '39',
+            title: '강서면옥',
+            tel: '',
+            homepage: '<a href="https://example.com/menu" target="_blank">example.com</a>',
+            firstimage: '',
+            overview: '평양냉면 전문점이다.<br>1953년 문을 열었다.',
+            addr1: '서울특별시 중구 세종대로11길 35',
+          }),
+        };
+      if (url.includes('/detailImage2'))
+        return { body: okTour([{ originimgurl: 'http://tong.visitkorea.or.kr/a.jpg', smallimageurl: 'http://tong.visitkorea.or.kr/a_s.jpg', serialnum: '1' }]) };
+      if (url.includes('/detailIntro2'))
+        return {
+          body: okTour({
+            firstmenu: '평양물냉면',
+            treatmenu: '함흥비빔냉면 / 모듬 버섯구이',
+            opentimefood: '11:00~22:00 (준비시간 15:00~17:00)',
+            restdatefood: '설·추석 연휴',
+            parkingfood: '가능',
+            chkcreditcardfood: '가능',
+            infocenterfood: '02-752-1945',
+          }),
+        };
+      if (url.includes('/search/keyword.json'))
+        return { body: { documents: [{ place_name: '강서면옥', place_url: 'http://place.map.kakao.com/8157826', phone: '02-752-1945', category_name: '음식점 > 한식 > 냉면' }] } };
+      if (url.includes('/search/category.json'))
+        return {
+          body: {
+            documents: [
+              { place_name: '강서면옥', distance: '5', category_name: '여행 > 관광,명소' },
+              { place_name: '덕수궁', distance: '420', category_name: '여행 > 관광,명소 > 문화유적 > 고궁,궁', place_url: 'http://place.map.kakao.com/10305191' },
+              { place_name: '서울도보관광코스', distance: '300', category_name: '여행 > 관광,명소 > 도보여행' },
+            ],
+          },
+        };
+      return { body: okTour('') };
+    };
+    const d = await placeDetail({ id: 'tour:232229', name: '강서면옥', pos: { lat: 37.5614, lng: 126.9748 }, contentTypeId: '39' });
+    expect(d.source).toBe('tourapi');
+    expect(d.images).toEqual(['https://tong.visitkorea.or.kr/a.jpg']);
+    expect(d.overview).toBe('평양냉면 전문점이다.\n1953년 문을 열었다.');
+    expect(d.homepage).toBe('https://example.com/menu');
+    expect(d.info.map((r) => r.label)).toEqual(['주소', '대표 메뉴', '취급 메뉴', '영업시간', '쉬는 날', '주차', '카드', '문의']);
+    expect(d.kakaoUrl).toBe('https://place.map.kakao.com/8157826');
+    expect(d.kakaoUrlKind).toBe('place');
+    expect(d.nearby).toEqual([{ name: '덕수궁', distance: 420, category: '고궁,궁', url: 'https://place.map.kakao.com/10305191' }]);
+    const img = calls.find((c) => c.url.includes('/detailImage2'))!;
+    expect(img.url).toContain('imageYN=Y');
+  });
+
+  it('카카오 장소를 못 찾으면 이름·좌표로 만든 지도 링크', async () => {
+    const { placeDetail } = await import('../src/providers/placeDetail.ts');
+    handler = (url) => (url.includes('dapi.kakao.com') ? { body: { documents: [] } } : { body: okTour('') });
+    const d = await placeDetail({ id: 'kakao:999', name: '어느 카페', pos: { lat: 37.5, lng: 127 } });
+    expect(d.kakaoUrl).toBe('https://place.map.kakao.com/999');
+    const e = await placeDetail({ id: 'user:lodging', name: '우리 숙소', pos: { lat: 37.5, lng: 127 } });
+    expect(e.kakaoUrlKind).toBe('map');
+    expect(e.kakaoUrl).toBe(`https://map.kakao.com/link/map/${encodeURIComponent('우리 숙소')},37.5,127`);
+  });
+
+  it('/api/place 쿼리 검사', async () => {
+    const { parsePlaceRef } = await import('../src/validate.ts');
+    expect(parsePlaceRef({ id: 'tour:1', name: '덕수궁', lat: '37.5', lng: '126.9', type: '12' })).toMatchObject({ id: 'tour:1', contentTypeId: '12' });
+    expect(parsePlaceRef({ id: 'javascript:alert(1)', name: 'x', lat: '37', lng: '127' })).toBeNull();
+    expect(parsePlaceRef({ id: 'tour:1', name: '', lat: '37', lng: '127' })).toBeNull();
+    expect(parsePlaceRef({ id: 'tour:1', name: 'x', lat: '999', lng: '127' })).toBeNull();
   });
 });

@@ -8,5 +8,6 @@ export * from './schedule.ts';
 export * from './optimize.ts';
 export * from './explain.ts';
 export * from './planner.ts';
+export * from './multiday.ts';
 export * from './sample/data.ts';
 export * from './sample/providers.ts';

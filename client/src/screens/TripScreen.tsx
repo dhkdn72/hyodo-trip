@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatKoreanDate, toMin } from '@hyodo/core';
+import { addDays, formatKoreanDate, toMin } from '@hyodo/core';
 import { PlaceSearchSheet } from '../components/PlaceSearchSheet';
 import { Header, Segmented } from '../components/ui';
 import type { TripForm } from '../state';
@@ -19,7 +19,8 @@ export function TripScreen({
   onNext: () => void;
   sampleNote: string | null;
 }) {
-  const [sheet, setSheet] = useState<null | 'region' | 'origin'>(null);
+  const [sheet, setSheet] = useState<null | 'region' | 'origin' | 'lodging'>(null);
+  const multi = trip.nights > 0;
   const timeOk = toMin(trip.endTime) - toMin(trip.startTime) >= 120;
   const ready = !!trip.region && !!trip.origin && !!trip.date && timeOk;
 
@@ -33,9 +34,10 @@ export function TripScreen({
         </button>
 
         <div className="field" style={{ position: 'relative' }}>
-          <span className="field-label">날짜</span>
+          <span className="field-label">{multi ? '가는 날' : '날짜'}</span>
           <span className="field-value" aria-hidden>
             {formatKoreanDate(trip.date)}
+            {multi && ` ~ ${formatKoreanDate(addDays(trip.date, trip.nights)).replace(/^\d+년 /, '')}`}
           </span>
           {/* 투명한 기본 날짜 입력을 카드 전체에 덮어, 누르면 기기의 날짜 선택기가 열림 */}
           <input
@@ -55,8 +57,22 @@ export function TripScreen({
           />
         </div>
 
+        <div className="card">
+          <span className="field-label">여행 기간</span>
+          <Segmented
+            label="여행 기간"
+            value={trip.nights}
+            options={[
+              { value: 0, label: '당일치기' },
+              { value: 1, label: '1박 2일' },
+              { value: 2, label: '2박 3일' },
+            ]}
+            onChange={(v) => onChange({ ...trip, nights: v })}
+          />
+        </div>
+
         <div className="field">
-          <span className="field-label">일정 시간</span>
+          <span className="field-label">{multi ? '하루 일정 시간 (날마다 같아요)' : '일정 시간'}</span>
           <div className="time-row field-value">
             <select value={trip.startTime} onChange={(e) => onChange({ ...trip, startTime: e.target.value })} aria-label="시작 시각">
               {START_OPTIONS.map((t) => (
@@ -95,9 +111,28 @@ export function TripScreen({
           <span className={`field-value ${trip.origin ? '' : 'placeholder'}`}>{trip.origin?.name ?? '숙소나 집 주소'}</span>
         </button>
 
+        {multi && (
+          <div className="field lodging-field">
+            <button className="field-main" onClick={() => setSheet('lodging')}>
+              <span className="field-label">숙소</span>
+              <span className="field-value">{trip.lodging?.name ?? '추천받기'}</span>
+              <span className="field-sub">
+                {trip.lodging
+                  ? '이 숙소에서 묵고 다음 날 여기서 출발해요.'
+                  : '지역 안에서 부모님 조건(엘리베이터·주차)에 맞는 숙소를 골라 드려요. 정한 숙소가 있으면 눌러서 찾아 주세요.'}
+              </span>
+            </button>
+            {trip.lodging && (
+              <button className="btn text small" onClick={() => onChange({ ...trip, lodging: null })}>
+                추천받기로 바꾸기
+              </button>
+            )}
+          </div>
+        )}
+
         <label className="check-row">
           <input type="checkbox" checked={trip.returnToOrigin} onChange={(e) => onChange({ ...trip, returnToOrigin: e.target.checked })} />
-          일정이 끝나면 출발 장소로 돌아와요
+          {multi ? '마지막 날 일정이 끝나면 출발 장소로 돌아와요' : '일정이 끝나면 출발 장소로 돌아와요'}
         </label>
       </div>
 
@@ -112,7 +147,13 @@ export function TripScreen({
         kind={sheet ?? 'region'}
         sampleNote={sampleNote}
         onClose={() => setSheet(null)}
-        onPick={(v) => (sheet === 'region' ? onChange({ ...trip, region: v }) : onChange({ ...trip, origin: v }))}
+        onPick={(v) =>
+          sheet === 'region'
+            ? onChange({ ...trip, region: v })
+            : sheet === 'lodging'
+              ? onChange({ ...trip, lodging: v })
+              : onChange({ ...trip, origin: v })
+        }
       />
     </section>
   );

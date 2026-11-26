@@ -1,5 +1,5 @@
 // 한국관광공사 국문 관광정보 서비스 (KorService2)
-//  - areaBasedList2     : 법정동 코드(lDongRegnCd·lDongSignguCd)로 관광지(12)·문화시설(14)·음식점(39) 후보
+//  - areaBasedList2     : 법정동 코드(lDongRegnCd·lDongSignguCd)로 관광지(12)·문화시설(14)·음식점(39)·숙박(32)·쇼핑(38) 후보
 //  - locationBasedList2 : 좌표 반경 후보 (보조)
 //  - detailIntro2       : 휴무일(restdate…), 음식점 대표·취급 메뉴(firstmenu, treatmenu)
 //
@@ -9,7 +9,7 @@
 //    그래서 반경을 덮는 시군구의 법정동 코드를 구해 areaBasedList2 로 받고, 좌표로 반경 안만 남깁니다.
 // 문서: https://www.data.go.kr/data/15101578/openapi.do
 
-import { haversine, type LatLng, type Place } from '@hyodo/core';
+import { haversine, isShoppingSpot, type LatLng, type Place } from '@hyodo/core';
 import { env } from '../env.ts';
 import { ApiError, fetchText, log, mapLimit, TtlCache } from '../http.ts';
 import { kakaoRegionCode } from './kakao.ts';
@@ -65,7 +65,8 @@ function toPlace(it: any, kind: Place['kind']): Place | null {
     addr: it.addr1 || undefined,
     pos: { lat, lng },
     contentTypeId: String(it.contenttypeid ?? ''),
-    image: it.firstimage || undefined,
+    image: it.firstimage ? String(it.firstimage).replace(/^http:\/\//, 'https://') : undefined,
+    thumb: it.firstimage2 ? String(it.firstimage2).replace(/^http:\/\//, 'https://') : undefined,
     lcls: [it.lclsSystm1, it.lclsSystm2, it.lclsSystm3].filter(Boolean),
     lDong: toLDong(it),
   };
@@ -126,9 +127,22 @@ export async function regionCodesAround(center: LatLng, radiusM: number): Promis
   return list;
 }
 
-export async function tourSearch(center: LatLng, radiusM: number, kind: 'attraction' | 'restaurant'): Promise<Place[]> {
+const TYPES: Record<'attraction' | 'restaurant' | 'lodging' | 'shopping', string[]> = {
+  attraction: ['12', '14'],
+  restaurant: ['39'],
+  lodging: ['32'],
+  shopping: ['38'],
+};
+const CAP = { attraction: 150, restaurant: 200, lodging: 60, shopping: 60 };
+
+export async function tourSearch(
+  center: LatLng,
+  radiusM: number,
+  kind: 'attraction' | 'restaurant' | 'lodging' | 'shopping',
+): Promise<Place[]> {
   const key = env.tourApiKey!;
-  const types = kind === 'attraction' ? ['12', '14'] : ['39'];
+  const types = TYPES[kind];
+  const placeKind: Place['kind'] = kind === 'shopping' ? 'attraction' : kind;
   const radius = Math.min(20000, Math.round(radiusM));
   const regions = await regionCodesAround(center, radius);
 
@@ -163,16 +177,18 @@ export async function tourSearch(center: LatLng, radiusM: number, kind: 'attract
   const seen = new Set<string>();
   const out: Place[] = [];
   for (const it of lists.flat()) {
-    const p = toPlace(it, kind);
+    const p = toPlace(it, placeKind);
     if (!p || seen.has(p.id)) continue;
     seen.add(p.id);
+    // 쇼핑(38)은 개별 면세점·전문상가가 대부분이라 시장·백화점 등만 남김 (중구 552곳 중 대부분이 SH040300)
+    if (kind === 'shopping' && !isShoppingSpot(p)) continue;
     const d = haversine(center, p.pos);
     if (d > radius) continue;
     p.distFromCenter = Math.round(d);
     out.push(p);
   }
   out.sort((a, b) => (a.distFromCenter ?? 0) - (b.distFromCenter ?? 0));
-  return out.slice(0, kind === 'attraction' ? 150 : 200);
+  return out.slice(0, CAP[kind]);
 }
 
 /** 휴무일·메뉴. 실패해도 일정 계산은 계속되도록 개별 오류는 무시 */

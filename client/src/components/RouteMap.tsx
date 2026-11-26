@@ -23,7 +23,13 @@ function buildGeometry(stops: Stop[]) {
           ] as [number, number][]);
       segs.push({ points: pts, taxi: s.legFromPrev.mode === 'taxi' });
     }
-    if (s.type === 'start') markers.push({ ...s.place.pos, label: '숙', home: true, name: s.place.name });
+    if (s.type === 'start') markers.push({ ...s.place.pos, label: s.place.kind === 'lodging' ? '숙' : '출', home: true, name: s.place.name });
+    else if (s.type === 'end') {
+      // 출발 장소와 다른 곳에서 끝나면(1일차 → 숙소, 마지막 날 → 집) 끝 지점도 표시
+      const st = stops[0];
+      const far = Math.abs(st.place.pos.lat - s.place.pos.lat) + Math.abs(st.place.pos.lng - s.place.pos.lng) > 0.0003;
+      if (far) markers.push({ ...s.place.pos, label: s.place.kind === 'lodging' ? '숙' : '도', home: true, name: s.place.name });
+    }
     else if (s.type === 'visit' || s.type === 'meal') markers.push({ ...s.place.pos, label: String(++n), home: false, name: s.place.name });
     else if (s.type === 'rest') markers.push({ ...s.place.pos, label: '☕', home: false, name: s.place.name });
     prev = s;

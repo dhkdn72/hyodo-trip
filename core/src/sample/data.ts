@@ -1,6 +1,6 @@
 // ⚠️ 예시(샘플) 데이터 — API 키가 없을 때 화면을 시연하기 위한 데이터입니다.
 // - 관광지 이름과 좌표는 서울 중구 일대 실제 명소의 대략적인 위치입니다.
-// - 음식점·카페는 실제 상호가 아닌 가상의 이름이며 이름 끝에 '(예시)'를 붙였습니다.
+// - 음식점·카페·숙소는 실제 상호가 아닌 가상의 이름이며 이름 끝에 '(예시)'를 붙였습니다.
 // - 무장애 정보(주차·경사로 등)와 메뉴는 화면 시연용 예시 값으로, 실제 시설 정보가 아닙니다.
 //   실제 정보는 TourAPI·무장애 여행 정보 API 키를 넣으면 그 응답으로 바뀝니다.
 
@@ -59,14 +59,28 @@ export const SAMPLE_ATTRACTIONS: Place[] = [
   A('seoulplaza', '서울광장', 37.5655, 126.978, '12', acc({ ramp: true, restroom: true })),
   A('cheonggye', '청계천', 37.5692, 126.9779, '12', NONE),
   A('myeongdongcathedral', '명동대성당', 37.5633, 126.9873, '12', acc({ ramp: true })),
-  A('myeongdongst', '명동거리', 37.5636, 126.985, '38', NONE, { tags: ['crowded'] }),
+  A('myeongdongst', '명동거리', 37.5636, 126.985, '12', NONE, { tags: ['crowded'], lcls: ['VE', 'VE04', 'VE040100'] }),
   A('namsangol', '남산골한옥마을', 37.5593, 126.9946, '12', acc({ parking: true, ramp: true, restroom: true, wheelchair: true })),
-  A('namdaemun', '남대문시장', 37.5592, 126.9776, '38', NONE, { tags: ['crowded'] }),
   A('sungnyemun', '숭례문', 37.56, 126.9752, '12', acc({ ramp: true })),
   A('seoullo', '서울로7017', 37.5568, 126.9707, '12', acc({ elevator: true, ramp: true })),
   A('nseoultower', 'N서울타워', 37.5512, 126.9882, '12', acc({ elevator: true, restroom: true }), { tags: ['hill'] }),
   A('baekbeom', '남산공원 백범광장', 37.556, 126.983, '12', NONE),
   A('historymuseum', '서울역사박물관', 37.5703, 126.9703, '14', acc({ parking: true, elevator: true, restroom: true, wheelchair: true })),
+];
+
+/** 쇼핑(38) — 취향에서 시장·쇼핑을 고를 때만 후보로 받음 */
+export const SAMPLE_SHOPPING: Place[] = [
+  A('namdaemun', '남대문시장', 37.5592, 126.9776, '38', NONE, { tags: ['crowded'], lcls: ['SH', 'SH06', 'SH060200'] }),
+  A('jungbu', '중부시장', 37.5672, 126.9965, '38', NONE, { tags: ['crowded'], lcls: ['SH', 'SH06', 'SH060200'] }),
+];
+
+/** 숙소(32) — 가상의 이름. 무장애 정보도 예시 값 */
+export const SAMPLE_LODGINGS: Place[] = [
+  { id: 'sample:hotel-myeongdong', source: 'sample', kind: 'lodging', name: '명동 호텔 (예시)', pos: { lat: 37.5622, lng: 126.9842 }, contentTypeId: '32', lcls: ['AC', 'AC01', 'AC010100'], access: acc({ elevator: true, parking: true, restroom: true }) },
+  { id: 'sample:hotel-cityhall', source: 'sample', kind: 'lodging', name: '시청 호텔 (예시)', pos: { lat: 37.5668, lng: 126.9795 }, contentTypeId: '32', lcls: ['AC', 'AC01', 'AC010100'], access: acc({ elevator: true, ramp: true }) },
+  { id: 'sample:hanok-namsan', source: 'sample', kind: 'lodging', name: '남산 한옥스테이 (예시)', pos: { lat: 37.5588, lng: 126.9905 }, contentTypeId: '32', lcls: ['AC', 'AC03', 'AC030200'], access: NONE },
+  { id: 'sample:residence-seoulst', source: 'sample', kind: 'lodging', name: '서울역 레지던스 (예시)', pos: { lat: 37.5558, lng: 126.9725 }, contentTypeId: '32', lcls: ['AC', 'AC02', 'AC020200'], access: acc({ elevator: true, parking: true }) },
+  { id: 'sample:guesthouse', source: 'sample', kind: 'lodging', name: '을지로 게스트하우스 (예시)', pos: { lat: 37.5665, lng: 126.989 }, contentTypeId: '32', lcls: ['AC', 'AC06', 'AC060200'], access: NONE },
 ];
 
 export const SAMPLE_RESTAURANTS: Place[] = [

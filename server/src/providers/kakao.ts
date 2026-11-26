@@ -150,3 +150,53 @@ export async function kakaoDrive(a: LatLng, b: LatLng): Promise<RawRoute> {
 export function logKakaoError(where: string, e: unknown) {
   log(`카카오 ${where} 실패 → 추정치 사용:`, (e as Error).message);
 }
+
+const norm = (s: string) => s.replace(/\[[^\]]*\]|\([^)]*\)|\s|·/g, '').toLowerCase();
+const https = (u: string) => u.replace(/^http:\/\//, 'https://');
+
+/** 이름·좌표로 카카오맵 장소 페이지 찾기 (메뉴·가격·사진·리뷰는 카카오맵에서) */
+export async function kakaoFindPlace(name: string, p: LatLng): Promise<{ url: string; phone?: string; category?: string } | null> {
+  const j = await local('/v2/local/search/keyword.json', {
+    query: name.replace(/\([^)]*\)/g, ' ').trim().slice(0, 40),
+    x: p.lng.toFixed(6),
+    y: p.lat.toFixed(6),
+    radius: 600,
+    sort: 'distance',
+    size: 5,
+  });
+  const n = norm(name);
+  const doc = (j?.documents ?? []).find((d: any) => {
+    const m = norm(d.place_name);
+    return m.length >= 2 && (m.includes(n) || n.includes(m));
+  });
+  if (!doc) return null;
+  return { url: https(doc.place_url), phone: doc.phone || undefined, category: doc.category_name || undefined };
+}
+
+/** 근처 관광명소 (카테고리 AT4) — 자기 자신·하위 시설·도보 코스는 뺌 */
+export async function kakaoNearbySpots(name: string, p: LatLng, radiusM = 700) {
+  const j = await local('/v2/local/search/category.json', {
+    category_group_code: 'AT4',
+    x: p.lng.toFixed(6),
+    y: p.lat.toFixed(6),
+    radius: radiusM,
+    sort: 'distance',
+    size: 15,
+  });
+  const n = norm(name);
+  const out: { name: string; distance: number; category?: string; url?: string }[] = [];
+  for (const d of j?.documents ?? []) {
+    const m = norm(d.place_name);
+    const dist = Number(d.distance) || 0;
+    if (dist < 60 || m.includes(n) || n.includes(m)) continue;
+    if (/(코스|투어)$/.test(d.place_name)) continue;
+    out.push({
+      name: d.place_name,
+      distance: dist,
+      category: String(d.category_name ?? '').split('>').pop()?.trim() || undefined,
+      url: d.place_url ? https(d.place_url) : undefined,
+    });
+    if (out.length >= 5) break;
+  }
+  return out;
+}

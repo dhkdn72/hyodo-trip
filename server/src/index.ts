@@ -2,12 +2,12 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { planTrip, PlanError, SAMPLE_AREA, sampleGeoSearch, type PlanRequest } from '@hyodo/core';
+import { planJourney, PlanError, SAMPLE_AREA, sampleGeoSearch, type PlanRequest } from '@hyodo/core';
 import { env } from './env.ts';
 import { log } from './http.ts';
 import { createProviders, providerStatus } from './providers/index.ts';
 import { kakaoGeoSearch } from './providers/kakao.ts';
-import { validatePlanRequest } from './validate.ts';
+import { parsePlaceRef, validatePlanRequest } from './validate.ts';
 
 const app = express();
 app.use(express.json({ limit: '200kb' }));
@@ -51,13 +51,27 @@ app.post('/api/plan', async (req, res) => {
   if (problem) return res.status(400).json({ error: problem, code: 'BAD_INPUT' });
   const t0 = Date.now();
   try {
-    const result = await planTrip(req.body as PlanRequest, providers);
-    log(`일정 계산 ${Date.now() - t0}ms · 방문 ${result.summary.visitCount}곳 · 택시 ${result.summary.taxiLegs}구간`);
+    const result = await planJourney(req.body as PlanRequest, providers);
+    const visits = result.days.reduce((n, d) => n + d.summary.visitCount, 0);
+    const taxis = result.days.reduce((n, d) => n + d.summary.taxiLegs, 0);
+    log(`일정 계산 ${Date.now() - t0}ms · ${result.days.length}일 · 방문 ${visits}곳 · 택시 ${taxis}구간${result.lodging ? ` · 숙소 ${result.lodging.name}` : ''}`);
     res.json(result);
   } catch (e) {
     if (e instanceof PlanError) return res.status(422).json({ error: e.message, code: e.code });
     log('일정 계산 오류', e);
     res.status(500).json({ error: '일정을 계산하다 문제가 생겼어요. 잠시 후 다시 시도해 주세요.', code: 'INTERNAL' });
+  }
+});
+
+// 화면 ④ 장소 상세 (사진·소개·이용시간·메뉴·근처 관광지·카카오맵 링크)
+app.get('/api/place', async (req, res) => {
+  const ref = parsePlaceRef(req.query);
+  if (!ref) return res.status(400).json({ error: '장소 정보가 잘못됐어요.', code: 'BAD_INPUT' });
+  try {
+    res.json(await providers.placeDetail!(ref));
+  } catch (e) {
+    log('장소 상세 오류', e);
+    res.status(500).json({ error: '장소 정보를 불러오지 못했어요.', code: 'INTERNAL' });
   }
 });
 
