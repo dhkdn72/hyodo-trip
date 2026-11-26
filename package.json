@@ -15,7 +15,8 @@
     "build:demo": "npm run build:demo -w client",
     "start": "npm run start -w server",
     "test": "vitest run",
-    "typecheck": "tsc -p core && tsc -p server && tsc -p client"
+    "typecheck": "tsc -p core && tsc -p server && tsc -p client",
+    "eval:recommend": "npm run eval:recommend -w server"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

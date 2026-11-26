@@ -18,6 +18,7 @@ import {
   wantsShopping,
 } from './prefs.ts';
 import { runTimeline, type SeqNode, type TimelineCtx } from './schedule.ts';
+import { SEMANTIC_REASON_Z, semanticBonus, semanticQueries, zscores } from './semantic.ts';
 import { TravelMatrix } from './travel.ts';
 import type {
   DataSources,
@@ -146,6 +147,10 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     rule = (await providers.parseFreeText?.(freeText).catch(() => null)) ?? ruleFreeText(freeText);
   }
 
+  // 의미 기반 추천에 쓸 질의 (취향을 고르지 않았거나 모델이 없으면 규칙만)
+  const semQueries = providers.semantic ? semanticQueries(prefs, rule) : [];
+  let semUsed = null as { n: number; ms: number; top: string[]; method: string } | null;
+
   const pinnedIds = Object.values(pinned);
   const isForced = (p: Place) => include.has(p.id) || pinnedIds.includes(p.id);
   const baseScore = (p: Place, r: number) => {
@@ -180,9 +185,21 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
       list
         .map((p) => ({ place: p, score: baseScore(p, r) + prefScore(p, prefs, rule).bonus }))
         .sort((a, b) => b.score - a.score);
+    // 임베딩을 쓸 때는 키워드로 못 찾은 곳도 볼 수 있게 후보를 넉넉히(40곳) 두고 의미 점수로 다시 매김
+    const attrN = semQueries.length ? 40 : 25;
     const attrPool = prelim(allAttr)
-      .filter((x, i) => i < 25 || isForced(x.place))
+      .filter((x, i) => i < attrN || isForced(x.place))
       .map((x) => x.place);
+    const semZ = new Map<string, number>();
+    if (semQueries.length) {
+      const tSem = timer();
+      const res = await providers.semantic!.score(semQueries, attrPool).catch(() => null);
+      if (res && res.scores.size) {
+        for (const [id, z] of zscores(res.scores)) semZ.set(id, z);
+        const top = [...semZ].sort((a, b) => b[1] - a[1]).slice(0, 3);
+        semUsed = { n: res.scores.size, ms: tSem(), method: res.method, top: top.map(([id]) => attrPool.find((p) => p.id === id)?.name ?? id) };
+      }
+    }
     const restPool = prelim(allRest)
       .filter((x, i) => i < 15 || isForced(x.place))
       .map((x) => x.place);
@@ -224,7 +241,13 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
           }
           notes.push(`${p.name}은(는) 장날이 아닌 날이라 열지 않을 수 있어요.`);
         }
-        out.push({ place: p, score: baseScore(p, r) + ps.bonus + acc.bonus, matched: ps.matched });
+        const z = semZ.get(p.id);
+        const matched = [...ps.matched];
+        if (z !== undefined) {
+          p.semanticZ = Math.round(z * 100) / 100;
+          if (z >= SEMANTIC_REASON_Z) matched.push('소개글이 취향과 비슷');
+        }
+        out.push({ place: p, score: baseScore(p, r) + ps.bonus + acc.bonus + (z !== undefined ? semanticBonus(z) : 0), matched });
       }
       return out.sort((a, b) => b.score - a.score);
     };
@@ -270,7 +293,9 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     key: 'collect',
     label: '후보 수집',
     ms: searchMs,
-    detail: `반경 ${km(radius)}${radius > requestedRadius ? ` (${km(requestedRadius)}에서 넓힘)` : ''} · 관광지 ${col.attrRawN}곳 · 음식점 ${col.restRawN}곳`,
+    detail:
+      `반경 ${km(radius)}${radius > requestedRadius ? ` (${km(requestedRadius)}에서 넓힘)` : ''} · 관광지 ${col.attrRawN}곳 · 음식점 ${col.restRawN}곳` +
+      (semUsed ? ` · 의미 추천(${semUsed.method})으로 ${semUsed.n}곳 비교 (가장 비슷: ${semUsed.top.join(', ')})` : ''),
   });
   if (closedNames.length) {
     warnings.push(`${closedNames.slice(0, 3).join(', ')}${closedNames.length > 3 ? ' 등' : ''}은(는) ${weekday}요일 휴무라 뺐어요.`);
@@ -535,7 +560,11 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
     const allMatched = new Set([...attrCands, ...restCands].flatMap((x) => x.matched));
     const missing = custom.filter((k) => !allMatched.has(k));
     if (missing.length) {
-      warnings.push(`기타로 적은 '${missing.join("', '")}'에 맞는 곳을 반경 ${km(radius)} 안에서 찾지 못했어요.`);
+      warnings.push(
+        semUsed
+          ? `기타로 적은 '${missing.join("', '")}'이(가) 이름에 들어간 곳은 없어, 소개글 뜻이 가까운 곳으로 찾았어요.`
+          : `기타로 적은 '${missing.join("', '")}'에 맞는 곳을 반경 ${km(radius)} 안에서 찾지 못했어요.`,
+      );
     }
   }
 
@@ -571,6 +600,15 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
       .slice(0, 6)
       .map((s) => s.place),
   };
+
+  // 화면에 보여 줄 추천 이유 (일정에 든 관광지만)
+  const matchedById = new Map(attrCands.map((x) => [x.place.id, x.matched]));
+  for (const st of stops) {
+    if (st.type === 'visit') {
+      const m = matchedById.get(st.place.id);
+      if (m?.length) st.place.matched = m;
+    }
+  }
 
   const walkSources = matrix.sourcesUsed.walk;
   const driveSources = matrix.sourcesUsed.drive;
@@ -608,6 +646,8 @@ export async function planTrip(req: PlanRequest, providers: Providers, opts: Pla
       cafes: cafesFound ? providers.sources.cafes : 'none',
       explain: explainSrc,
       freeText: rule?.source,
+      recommend: semUsed ? 'semantic' : 'rule',
+      recommendModel: semUsed?.method,
     },
     pipeline,
     freeTextRule: rule,

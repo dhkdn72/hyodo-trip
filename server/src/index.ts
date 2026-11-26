@@ -3,9 +3,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { planJourney, PlanError, SAMPLE_AREA, sampleGeoSearch, type PlanRequest } from '@hyodo/core';
+import { mountDevTools } from './dev.ts';
 import { env } from './env.ts';
 import { log } from './http.ts';
-import { createProviders, providerStatus } from './providers/index.ts';
+import { createProviders, providerStatus, warmUpSemantic } from './providers/index.ts';
 import { kakaoGeoSearch } from './providers/kakao.ts';
 import { parsePlaceRef, validatePlanRequest } from './validate.ts';
 
@@ -75,6 +76,9 @@ app.get('/api/place', async (req, res) => {
   }
 });
 
+// 개발 도구 (npm run dev 에서만): 추천 평가 데이터 만들기·평가 실행
+mountDevTools(app);
+
 // 빌드된 웹 화면 제공 (npm run build 후)
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, '../../client/dist');
@@ -84,9 +88,10 @@ if (existsSync(dist)) {
 }
 
 app.listen(env.port, () => {
+  warmUpSemantic();
   const s = providerStatus();
   log(`효도여행 서버 http://localhost:${env.port}`);
   log(
-    `TourAPI ${s.tourApi ? '✓' : '× (예시 데이터)'} · 무장애 ${s.korWith ? '✓' : '× (예시)'} · 카카오 ${s.kakao ? '✓' : '× (직선거리 추정)'} · LLM ${s.llm ?? '× (템플릿)'}`,
+    `TourAPI ${s.tourApi ? '✓' : '× (예시 데이터)'} · 무장애 ${s.korWith ? '✓' : '× (예시)'} · 카카오 ${s.kakao ? '✓' : '× (직선거리 추정)'} · LLM ${s.llm ?? '× (템플릿)'} · 의미 추천 ${s.semantic.model ?? '× (꺼짐)'}`,
   );
 });

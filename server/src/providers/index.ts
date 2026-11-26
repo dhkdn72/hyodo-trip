@@ -3,6 +3,7 @@
 //  단계            | 키 있음                          | 키 없음
 //  1 후보 수집      | TourAPI KorService2 (숙소·쇼핑 포함) | 예시 데이터(서울 중구)
 //  장소 상세        | TourAPI 상세·사진 + 카카오 장소   | 예시 상세(지도 링크)
+//  취향 의미 추천    | 문장 임베딩 모델(서버에서 실행) + BM25 | 키워드 규칙만 (모델을 못 쓰면 BM25 + 규칙)
 //  2 접근성 필터    | 무장애 여행 정보 KorWithService2 | 예시 데이터
 //  3 이동 시간      | 카카오 도보(편안한 길)·카카오모빌리티 | 직선거리 추정
 //  5 쉬는 곳        | 카카오 로컬 카테고리(카페)       | 예시 카페
@@ -14,6 +15,8 @@ import { attachKorWith } from './korWith.ts';
 import { kakaoCafes, kakaoDrive, kakaoWalk, logKakaoError } from './kakao.ts';
 import { llmExplain, llmFreeText } from './llm.ts';
 import { placeDetail } from './placeDetail.ts';
+import { semanticEnabled, semanticScore, semanticStatus } from './semantic.ts';
+export { warmUpSemantic } from './semantic.ts';
 import { tourEnrich, tourSearch } from './tourApi.ts';
 
 export function createProviders(): Providers {
@@ -56,6 +59,8 @@ export function createProviders(): Providers {
       : sample.nearbyCafes,
     // 예시 장소는 예시 상세, 그 밖에는 TourAPI·카카오 (키가 하나도 없으면 지도 링크만)
     placeDetail: (ref) => (ref.id.startsWith('sample:') || (!hasTour && !hasKakao) ? Promise.resolve(sampleDetail(ref)) : placeDetail(ref)),
+    // 의미 추천: 임베딩 모델 + BM25 (모델을 못 쓰면 BM25 만). 소개글이 필요해 TourAPI 키가 있을 때만
+    semantic: semanticEnabled && hasTour ? { model: env.embeddingModel.split('/').pop()!, score: semanticScore } : undefined,
     explain: hasLlm ? llmExplain : undefined,
     parseFreeText: hasLlm ? llmFreeText : undefined,
   };
@@ -67,5 +72,6 @@ export function providerStatus() {
     korWith: !!(env.tourApiKey && env.korWithApiKey),
     kakao: !!env.kakaoRestKey,
     llm: llmKind(),
+    semantic: semanticStatus(),
   };
 }

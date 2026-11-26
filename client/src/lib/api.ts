@@ -6,7 +6,7 @@ export const IS_DEMO = import.meta.env.MODE === 'demo';
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? '';
 
 export interface ServerStatus {
-  providers: { tourApi: boolean; korWith: boolean; kakao: boolean; llm: string | null };
+  providers: { tourApi: boolean; korWith: boolean; kakao: boolean; llm: string | null; semantic?: { model: string | null; error: string | null } };
   sampleArea: { name: string; center: { lat: number; lng: number }; note: string };
 }
 

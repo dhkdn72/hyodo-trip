@@ -91,15 +91,26 @@ const ALIASES: Record<'foods' | 'interests' | 'activities', Record<string, strin
   },
 };
 
-/** '기타' 입력 → 키워드 목록 (쉼표·띄어쓰기로 나눔, 2~10자, 그룹당 5개까지) */
+/** '기타' 입력 → 항목 목록 (쉼표·빗금으로 나눔, 띄어 쓴 말은 한 항목으로 유지, 그룹당 5개까지) */
 export function splitEtc(s: string | undefined): string[] {
   if (!s) return [];
   const out: string[] = [];
-  for (const w of s.split(/[,，、/·\s]+/)) {
-    const k = w.replace(/[^가-힣A-Za-z0-9]/g, '');
-    if (k.length >= 1 && k.length <= 10 && !out.includes(k)) out.push(k);
+  for (const w of s.split(/[,，、/·\n]+/)) {
+    const k = w.replace(/[^가-힣A-Za-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+    if (k.length >= 1 && k.length <= 20 && !out.includes(k)) out.push(k);
   }
   return out.filter((k) => k.length >= 2 || ['회', '절', '궁'].includes(k)).slice(0, 5);
+}
+
+/**
+ * 기타 항목이 장소 이름·메뉴에 있는지: 항목 전체(띄어쓰기 무시)가 있거나, 띄어 쓴 두 글자 이상 낱말이 모두 있을 때
+ * ('전통 술 빚기'가 '전주전통한지원'에 '전통'만 겹쳐 맞는 일을 막음 — 뜻으로 찾는 건 의미 추천이 맡음)
+ */
+export function customHit(k: string, t: string): boolean {
+  const compact = t.replace(/\s+/g, '');
+  if (compact.includes(k.replace(/\s+/g, ''))) return true;
+  const words = k.split(' ').filter((w) => w.length >= 2);
+  return words.length > 1 && words.every((w) => t.includes(w));
 }
 
 /**
@@ -114,7 +125,7 @@ export function normalizePrefs(p: PrefInput | null | undefined): (PrefInput & { 
     const list = [...(p[group] ?? [])];
     const custom: string[] = [];
     for (const k of splitEtc(p.etc?.[group])) {
-      const mapped = opts.includes(k) ? k : ALIASES[group][k];
+      const mapped = opts.includes(k) ? k : ALIASES[group][k] ?? ALIASES[group][k.replace(/\s+/g, '')];
       const v = mapped ?? k;
       if (!list.includes(v)) list.push(v);
       if (!mapped) custom.push(k);
@@ -194,7 +205,7 @@ export function prefScore(p: Place, prefs: PrefInput | null | undefined, rule: F
   const apply = (keys: string[], rules: Record<string, Rule>, customWeight: number) => {
     for (const k of keys) {
       const r = rules[k];
-      const hit = r ? ruleMatch(p, r) : k.length >= 1 && text(p).includes(k);
+      const hit = r ? ruleMatch(p, r) : customHit(k, text(p));
       if (hit) {
         bonus += r ? r.weight : customWeight;
         matched.push(k);

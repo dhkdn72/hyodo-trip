@@ -4,3 +4,4 @@ client/dist-demo/
 .env
 *.log
 .DS_Store
+server/.cache/

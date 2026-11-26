@@ -236,6 +236,10 @@ export function ResultScreen({
             <li>{SRC_LABEL[result.dataSources.taxi]}</li>
             <li>카페</li>
             <li>{SRC_LABEL[result.dataSources.cafes]}</li>
+            <li>취향 추천</li>
+            <li>
+              {result.dataSources.recommend === 'semantic' ? `${result.dataSources.recommendModel} + 키워드 규칙` : '키워드 규칙'}
+            </li>
             <li>설명</li>
             <li>{SRC_LABEL[result.dataSources.explain]}</li>
           </ul>

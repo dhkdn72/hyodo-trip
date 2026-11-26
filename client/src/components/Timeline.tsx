@@ -63,6 +63,9 @@ export function Timeline({
                       <span className="tl-kind">{kindLabel(s)}</span> · {s.depart}까지 {s.stayMin}분
                       {s.type === 'meal' && s.place.menu ? ` · ${s.place.menu}` : ''}
                     </div>
+                    {s.type === 'visit' && s.place.matched?.length ? (
+                      <div className="tl-why">추천 이유 · {[...new Set(s.place.matched)].join(', ')}</div>
+                    ) : null}
                     <AccessBadges place={s.place} />
                   </div>
                   {(s.place.thumb || s.place.image) && <img className="tl-thumb" src={s.place.thumb || s.place.image} alt="" loading="lazy" />}

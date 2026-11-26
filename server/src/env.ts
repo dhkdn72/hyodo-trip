@@ -41,6 +41,10 @@ export const env = {
   corsOrigins: (v('CORS_ORIGINS') ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   /** TourAPI MobileApp 파라미터 */
   appName: v('TOUR_API_APP_NAME') ?? 'HyodoTrip',
+  /** 의미 기반 추천 문장 임베딩 모델 (Hugging Face, transformers.js 용 ONNX). 'off' 면 끔 */
+  embeddingModel: v('EMBEDDING_MODEL') ?? 'Xenova/multilingual-e5-small',
+  /** 개발 도구(/api/dev/*) — npm run dev 로 켰을 때만 */
+  devTools: process.argv.includes('--dev'),
 };
 
 export function llmKind(): 'anthropic' | 'openai' | null {

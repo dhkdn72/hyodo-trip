@@ -3,6 +3,8 @@ export * from './config.ts';
 export * from './geo.ts';
 export * from './access.ts';
 export * from './prefs.ts';
+export * from './semantic.ts';
+export * from './evalRank.ts';
 export * from './travel.ts';
 export * from './schedule.ts';
 export * from './optimize.ts';

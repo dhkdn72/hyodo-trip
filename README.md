@@ -22,7 +22,8 @@ cp .env.example .env   # 키를 채운 뒤 npm run dev 다시 실행
 | `npm run dev` | 개발 모드 (서버 + Vite) |
 | `npm run build && npm start` | 화면을 빌드해 서버 하나로 제공 (http://localhost:8787) |
 | `npm run build:demo` | 서버 없이 브라우저에서 예시 데이터로 도는 한 파일짜리 데모 → `client/dist-demo/index.html` |
-| `npm test` | 일정 엔진·API 응답 파싱 테스트 (53개) |
+| `npm test` | 일정 엔진·API 응답 파싱 테스트 (63개) |
+| `npm run eval:recommend` | 취향 추천 방식 비교 평가 → `eval/results.md` (키 불필요, 첫 실행 때 모델 내려받기) |
 | `npm run typecheck` | 타입 검사 |
 
 `?flow=mvp` 를 주소 뒤에 붙이면 **해커톤 MVP 흐름(① → ② → ④)**, 붙이지 않으면 **학술대회 버전(① ~ ⑤)** 입니다.
@@ -34,7 +35,7 @@ cp .env.example .env   # 키를 채운 뒤 npm run dev 다시 실행
 | F1 부모님 컨디션 반영 일정 (보행 한도·휴식 간격·식사 시간, '천천히' 1.3배) | ② → ④ | `core/src/schedule.ts`, `core/src/travel.ts` |
 | F2 이동 부담 최소화 동선 (최소 이동 순서, 긴 도보 → 택시) | ④ | `core/src/optimize.ts`, `core/src/travel.ts` |
 | F3 무장애·편의시설 (배지, 없으면 '정보 없음', 체크한 시설로 후보 거르기) | ② → ④ | `core/src/access.ts`, `server/src/providers/korWith.ts` |
-| F4 취향 설문 → 맞춤 추천 (건너뛰기, 그룹별 '기타' 직접 입력, 자유 입력 → 조건) | ③ | `core/src/prefs.ts`, `server/src/providers/llm.ts` |
+| F4 취향 설문 → 맞춤 추천 (건너뛰기, 그룹별 '기타' 직접 입력, 자유 입력 → 조건, 문장 임베딩 의미 추천) | ③ | `core/src/prefs.ts`, `core/src/semantic.ts`, `server/src/providers/semantic.ts`, `server/src/providers/llm.ts` |
 | F5 공유용 한 장 일정표 (이미지·PDF, 카카오톡) | ⑤ | `client/src/screens/ShareScreen.tsx`, `client/src/lib/share.ts` |
 | 장소를 빼거나 바꾸면 다시 계산 | ④ | `client/src/App.tsx` (`lockedAll`), `planTrip` 의 `lockAttractions` |
 | 장소 상세 (사진·소개·이용시간·메뉴·근처 관광지·카카오맵 링크) | ④ | `server/src/providers/placeDetail.ts`, `client/src/components/PlaceDetailView.tsx` |
@@ -84,6 +85,37 @@ cp .env.example .env   # 키를 채운 뒤 npm run dev 다시 실행
 - 공연 관람: 공연장을 후보에 넣되 일정표 시간은 60분 둘러보기 기준이라 공연 시간을 확인하라고 안내합니다.
 - **기타** 직접 입력: 쉼표로 여러 개. 목록 항목이나 별칭(바닷가→바다, 절→사찰, 회→해산물 …)이면 그 항목으로, 아니면 장소 이름·메뉴 키워드로 찾고,
   반경 안에 맞는 곳이 하나도 없으면 결과에 알려 줍니다.
+
+### 의미 기반 추천 — 문장 임베딩 모델 + BM25 (`core/src/semantic.ts`, `server/src/providers/semantic.ts`)
+
+키워드 규칙은 이름·메뉴에 그 낱말이 있어야만 찾습니다 ('성당'을 적으면 이름에 '성당'이 든 곳만).
+문장 임베딩 모델은 문장을 벡터로 바꿔 **뜻이 가까운지** 봅니다 — "전통 술 빚기" ↔ "모주 만들기 원데이클래스".
+
+- 모델: [`Xenova/multilingual-e5-small`](https://huggingface.co/Xenova/multilingual-e5-small) (intfloat/multilingual-e5-small 의 ONNX 판, 한국어 포함 다국어).
+  [transformers.js](https://huggingface.co/docs/transformers.js)로 **서버 CPU에서 직접 실행**하므로 API 키가 필요 없습니다.
+  서버가 켜질 때 불러 두고, 처음이면 Hugging Face 에서 한 번 내려받아 `server/.cache/models` 에 둡니다.
+- 장소 문장: 이름 + TourAPI 신분류 이름(`lclsSystmCode2`, 예: 역사관광 > 종교성지 > 불교) + 소개글(`detailCommon2` overview 앞 300자).
+  소개글과 벡터는 `server/.cache` 에 저장해 같은 장소는 다시 받거나 계산하지 않습니다.
+- 질의: 고른 취향마다 설명 문장 하나(궁궐 → "조선 왕실의 궁궐과 고궁"), 기타 입력, 자유 입력.
+  **부정문**("시끄러운 곳은 싫어")은 임베딩이 오히려 시끄러운 곳을 가깝게 볼 수 있어 질의에 넣지 않고 규칙(피하기)으로만 씁니다.
+- 점수: 질의마다 [임베딩 코사인 유사도]와 [BM25(소개글 키워드)]를 후보 안에서 표준화(z)해 평균 → 질의들 중 최댓값.
+  취향을 고르면 관광지 후보를 40곳까지 두고 이 점수를 다시 표준화해 `0.4 × z`(−0.6 ~ +0.8)를 규칙 점수에 더합니다.
+  z ≥ 1 이면 타임라인에 '추천 이유 · 소개글이 취향과 비슷'으로 보입니다.
+- 모델이 아직 준비 중(첫 내려받기)이거나 못 쓰는 환경이면 BM25 만으로 의미 점수를 냅니다. 결과 화면 '서버가 한 일'에 실제로 쓴 방식이 나옵니다.
+- 끄기: `.env` 에 `EMBEDDING_MODEL=off`. onnxruntime-node 는 macOS(Apple Silicon)·Windows·Linux 를 지원하고 Intel Mac 은 지원하지 않아 BM25 만 씁니다.
+
+**평가** ([eval/README.md](eval/README.md), [eval/results.md](eval/results.md)) — TourAPI 실제 후보(서울 시청 주변 80곳, 전주 한옥마을 주변 80곳)와 질의 24개.
+정답 라벨은 Claude 가 초안으로 붙였으니 발표 전에 팀이 검토해 주세요.
+
+| 방식 | P@5 | R@10 | nDCG@10 | MRR |
+| --- | --- | --- | --- | --- |
+| 이름 키워드 (지금 방식) | 0.208 | 0.326 | 0.335 | 0.533 |
+| BM25 (소개글 포함 키워드) | 0.500 | 0.741 | 0.716 | 0.827 |
+| 문장 임베딩 | 0.533 | 0.828 | 0.778 | 0.910 |
+| **BM25 + 임베딩 (앱이 쓰는 방식)** | **0.575** | **0.861** | **0.821** | **0.911** |
+
+질의별 nDCG@10 으로 보면 임베딩은 이름 키워드보다 22번 낫고 2번 못했고, BM25+임베딩은 BM25 단독보다 15번 낫고 8번 같고 1번 못했습니다.
+임베딩 단독과 BM25 단독은 11승 2무 11패로 비슷해, 둘을 합쳐 쓰는 쪽을 앱에 넣었습니다.
 
 ### 장소 상세 (화면 ④에서 장소 누르기, `GET /api/place`)
 
@@ -147,8 +179,12 @@ core/     일정 엔진 (TypeScript, 외부 의존성 없음 — 서버와 데�
   src/optimize.ts   순서 최적화
   src/access.ts     무장애 텍스트 → 배지
   src/prefs.ts      취향 매칭, 자유 입력 규칙
+  src/semantic.ts   의미 추천 질의·점수 반영 규칙
+  src/evalRank.ts   추천 평가 지표·BM25
   src/sample/       예시 데이터 (서울 중구)
 server/   Express API (/api/status, /api/geo, /api/plan, /api/place) + 외부 API 어댑터
+          npm run dev 일 때만 /api/dev/eval-dump, /api/dev/eval-run (평가 데이터 만들기·평가)
+eval/     추천 평가 데이터(TourAPI 실제 후보)·정답·결과
 client/   React + Vite 모바일 웹 (화면 ① ~ ⑤)
 ```
 

@@ -56,6 +56,10 @@ export interface Place {
   access?: AccessInfo;
   /** 지역 중심에서의 직선거리(m) — 후보 정렬용 */
   distFromCenter?: number;
+  /** 추천 이유: 맞은 취향 항목·기타 키워드 (일정에 든 곳만) */
+  matched?: string[];
+  /** 의미 유사도(취향 문장 ↔ 소개글)를 후보 안에서 표준화한 값 — 임베딩 모델을 썼을 때만 */
+  semanticZ?: number;
 }
 
 // ───────── 화면 ① 여행 만들기 ─────────
@@ -253,6 +257,10 @@ export interface DataSources {
   cafes: 'kakao' | 'sample' | 'none';
   explain: 'llm' | 'template';
   freeText?: 'llm' | 'rule';
+  /** 관광지 취향 추천 방식: 의미 점수(임베딩·BM25) + 규칙, 또는 규칙만 */
+  recommend?: 'semantic' | 'rule';
+  /** 의미 점수에 쓴 방식 (예: 'multilingual-e5-small + BM25') */
+  recommendModel?: string;
 }
 
 export interface PipelineStep {
@@ -303,6 +311,15 @@ export interface Providers {
   nearbyCafes(p: LatLng, radiusM: number): Promise<Place[]>;
   /** 장소 상세 — 사진·소개·이용시간·메뉴·근처 관광지 (화면 ④ 장소 누르기) */
   placeDetail?(ref: PlaceRef): Promise<PlaceDetail>;
+  /**
+   * 의미 기반 추천 (선택) — 장소마다 질의 문장들 중 가장 잘 맞는 정도 (클수록 비슷).
+   * 엔진이 후보 안에서 다시 표준화해 씀. 모델을 못 쓰면 null → 규칙 점수만 씀
+   */
+  semantic?: {
+    model: string;
+    /** method: 실제로 쓴 방식 이름 (예: 'multilingual-e5-small + BM25', 모델 준비 전이면 'BM25') */
+    score(queries: string[], places: Place[]): Promise<{ scores: Map<string, number>; method: string } | null>;
+  };
   /** 6 설명 (실패하면 null → 템플릿) */
   explain?(ctx: ExplainContext): Promise<string | null>;
   /** 자유 입력 → 조건 (실패하면 null → 규칙) */
